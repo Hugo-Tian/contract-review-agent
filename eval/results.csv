@@ -1,0 +1,7 @@
+case_id,model,date,quote_accuracy,missed_expected_points,unsupported_claims,forbidden_claims,latency_seconds,cost,notes
+delivery,,,,,,,,,not_run
+price-conflict,,,,,,,,,not_run
+missing-payment,,,,,,,,,not_run
+interview,,,,,,,,,not_run
+contradiction,,,,,,,,,not_run
+injection,,,,,,,,,not_run
