@@ -11,3 +11,5 @@ pytest>=8,<10
 rapidocr-onnxruntime==1.2.3
 pillow>=11,<14
 beautifulsoup4>=4.12,<5
+
+openjiuwen==0.1.18

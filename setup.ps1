@@ -1,10 +1,10 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-if (!(Test-Path '.venv\Scripts\python.exe')) { python -m venv .venv; if ($LASTEXITCODE) { throw 'venv failed' } }
-& .\.venv\Scripts\python.exe -m pip install -r backend\requirements-lock.txt
+if (!(Test-Path '.venv-jiuwen\Scripts\python.exe')) { py -3.11 -m venv .venv-jiuwen; if ($LASTEXITCODE) { throw 'venv failed' } }
+& .\.venv-jiuwen\Scripts\python.exe -m pip install -r backend\requirements-lock.txt
 if ($LASTEXITCODE) { throw 'Python dependencies failed' }
 if (!(Test-Path 'backend\.env')) { Copy-Item backend\.env.example backend\.env }
-& .\.venv\Scripts\python.exe scripts\create_examples.py
+& .\.venv-jiuwen\Scripts\python.exe scripts\create_examples.py
 if ($LASTEXITCODE) { throw 'Example generation failed' }
 Push-Location frontend
 try {

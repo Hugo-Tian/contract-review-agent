@@ -85,3 +85,8 @@ def get_tools(doc_id, version):
     import json
     with lock:
         return {r[0]: json.loads(r[1]) for r in connection.execute('SELECT name,body FROM tools WHERE id=? AND version=?', (doc_id, version))}
+
+
+def delete_tool(doc_id, version, name):
+    with lock, connection:
+        connection.execute('DELETE FROM tools WHERE id=? AND version=? AND name=?', (doc_id, version, name))

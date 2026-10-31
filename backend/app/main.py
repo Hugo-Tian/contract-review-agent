@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import uuid
 from dotenv import load_dotenv
+from pydantic import Field
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +16,7 @@ from .schemas import Document, Block, TextInput, Revision, AnalysisRequest
 from .tool_schemas import PromiseRequest, RefundRequest, CompareRequest, SaveRequest
 from . import history, legal, contract_tools
 from . import store
+from .jiuwen_workflow import SDK_VERSION, run_contract_workflow
 from .analysis import configured, demo_report, analyze, ModelFailure, masked_document
 from .parsing import MAX_FILE
 
@@ -76,7 +78,7 @@ def require_doc(doc_id: str, version: int | None = None):
 @app.get('/api/health')
 async def health():
     return {'model_configured': configured(), 'max_analysis_chars': int(os.getenv('MAX_ANALYSIS_CHARS', '24000')),
-            'mode': 'single-user-local', 'capabilities': {'ocr': True, 'legal_search': True, 'refund': True, 'comparison': True, 'history': True, 'promises': True}}
+            'mode': 'single-user-local', 'workflow_engine': 'openJiuwen', 'sdk_version': SDK_VERSION, 'capabilities': {'ocr': True, 'legal_search': True, 'refund': True, 'comparison': True, 'history': True, 'promises': True, 'workflow': True}}
 
 
 @app.post('/api/documents/text')
@@ -299,6 +301,18 @@ async def restore_history(identifier: str):
 @app.delete('/api/history/{identifier}', status_code=204)
 async def remove_history(identifier: str):
     history.delete(identifier)
+
+
+class WorkflowRequest(AnalysisRequest):
+    confirmed: bool = False
+    promises: str = Field(default='', max_length=6000)
+
+
+@app.post('/api/workflow')
+async def workflow(body: WorkflowRequest):
+    """Explicit, inspectable orchestration; no unbounded autonomous actions."""
+    return await run_contract_workflow(body, require_doc, report, promises)
+
 
 
 if (ROOT / 'frontend' / 'dist').exists():

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import type { Document, Result, Evidence } from './types'
 import ToolsPanel from './ToolsPanel.vue'
 const ocrMode=ref('auto'), restoredTools=ref<any>(null), toolBusy=ref(false)
 function restoreSnapshot(snapshot:any){setDoc(snapshot.document);if(snapshot.context)Object.assign(context,snapshot.context);result.value=snapshot.result;message.value=snapshot.draft||snapshot.result?.report.message||'';step.value=snapshot.result?3:2;nextTick(()=>restoredTools.value=snapshot.tools||{})}
 
+const workflowPromises = ref('')
+const workflowResult = computed(()=>(result.value as any)?.workflow)
 const factLabels:Record<string,string> = {'签约主体':'和谁签合同','收款主体':'钱付给谁','成交金额':'合同总价','分项价格':'各项服务怎么收费','服务期限':'服务到什么时候','服务内容':'机构提供什么服务','交付标准':'做到什么才算完成','退款条件':'什么情况下可以退费','违约责任':'没按约定做怎么办','争议解决':'有争议怎么处理'}
 const statusLabels:Record<string,string> = {'明确约定':'合同写明了','表述含糊':'这里没说清楚','条款冲突':'前后说法不一致','信息缺失':'本次正文里没找到'}
 const levelLabels:Record<string,string> = {'高':'优先问清楚','中':'建议问清楚','低':'了解一下'}
@@ -14,6 +16,7 @@ const text = ref(''), doc = ref<Document|null>(null), result = ref<Result|null>(
 const edits = reactive<Record<string,string>>({}), confirmed = ref(false), consent = ref(false)
 const mode = ref<'demo'|'live'>('demo'), highlighted = ref(''), outbound = ref<Document|null>(null)
 const message = ref(''), style = ref('礼貌直接')
+watch(workflowPromises,()=>{consent.value=false})
 const context = reactive({role:'学员',goal:'签约前检查',signed:'未知',paid:'未知',amount:'',signed_date:'',paid_date:'',services:'',preferences:''})
 const dirty = computed(()=>doc.value?.blocks.some(b=>edits[b.id] !== b.text) ?? false)
 const length = computed(()=>doc.value?.blocks.reduce((n,b)=>n+b.text.length,0) ?? 0)
@@ -25,13 +28,13 @@ async function api<T>(path:string, options:RequestInit={}):Promise<T> {
 }
 function json(method:string, body:unknown) {return {method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}}
 async function work(label:string, fn:()=>Promise<void>) {if(busy.value||toolBusy.value)return;busy.value=label;error.value='';try{await fn()}catch(e){error.value=e instanceof Error?e.message:'操作失败，请重试'}finally{busy.value=''}}
-function setDoc(value:Document){restoredTools.value=null;doc.value=value;for(const key of Object.keys(edits))delete edits[key];for(const b of value.blocks)edits[b.id]=b.text;confirmed.value=false;consent.value=false;outbound.value=null;result.value=null;step.value=2}
+function setDoc(value:Document){if(doc.value?.id!==value.id)workflowPromises.value='';restoredTools.value=null;doc.value=value;for(const key of Object.keys(edits))delete edits[key];for(const b of value.blocks)edits[b.id]=b.text;confirmed.value=false;consent.value=false;outbound.value=null;result.value=null;step.value=2}
 async function importText(){await work('正在整理粘贴文本…', async()=>setDoc(await api<Document>('/documents/text',json('POST',{text:text.value}))))}
 async function upload(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;if(file.size>10*1024*1024){error.value='文件超过 10 MB 限制';input.value='';return}await work('正在提取正文和本机OCR，最长等待180秒…',async()=>setDoc(await api<Document>('/documents/upload?name='+encodeURIComponent(file.name)+'&ocr='+ocrMode.value,{method:'POST',body:file,headers:{'Content-Type':'application/octet-stream'}})));input.value=''}
 function sample(){text.value='虚构示例｜星桥求职辅导服务合同\n第一条 签约主体为星桥示例教育有限公司，收款主体为星桥示例教育有限公司。\n第二条 服务期为2026年11月1日至2027年4月30日，优惠成交价为人民币9800元。\n第三条 简历修改2次，每次反馈不晚于3个工作日；一对一辅导4次，每次60分钟。\n第四条 建立服务群并开通学习账号，即视为课程包全部交付。课程包分项标价6000元，一对一辅导分项标价8000元。\n第五条 提前退出按分项标价扣除已提供服务，另扣成交价20%的违约金。\n第六条 申请退款需提供学习记录，审核和到账期限另行通知。\n第七条 不保证正式录用，面试通过不等于录用。岗位推荐地区和数量以附件一为准，附件一未随本样例提供。\n第八条 争议由双方协商处理。所有名称与交易均为虚构。'}
 async function save(){if(!doc.value)return;await work('正在保存正文修订…',async()=>setDoc(await api<Document>('/documents/'+doc.value!.id,json('PATCH',{version:doc.value!.version,edits}))))}
 async function preview(){if(!doc.value)return;await work('正在生成脱敏预览…',async()=>{outbound.value=await api<Document>('/documents/'+doc.value!.id+'/outbound')})}
-async function run(){if(!doc.value)return;await work(mode.value==='demo'?'正在生成演示布局…':'正在请求模型并校验引用，可能需要数分钟…',async()=>{result.value=await api<Result>('/analyze',json('POST',{document_id:doc.value!.id,version:doc.value!.version,mode:mode.value,context,consent:consent.value}));message.value=result.value.report.message;step.value=3;window.scrollTo({top:0})})}
+async function run(){if(!doc.value)return;await work(mode.value==='demo'?'正在生成演示布局…':'正在请求模型并校验引用，可能需要数分钟…',async()=>{result.value=await api<Result>('/workflow',json('POST',{document_id:doc.value!.id,version:doc.value!.version,mode:mode.value,context,consent:consent.value,confirmed:confirmed.value,promises:workflowPromises.value}));message.value=result.value.report.message;restoredTools.value={promises:workflowResult.value?.promises};step.value=3;window.scrollTo({top:0})})}
 async function locate(e:Evidence){highlighted.value=e.block_id;await nextTick();document.getElementById('source-'+e.block_id)?.scrollIntoView({behavior:'smooth',block:'center'})}
 async function copy(){try{await navigator.clipboard.writeText(message.value);toast.value='沟通草稿已复制';setTimeout(()=>toast.value='',2500)}catch{error.value='无法访问剪贴板，请选中草稿后手动复制。'}}
 function adjust(){if(!result.value)return;message.value=style.value==='简短询问'?'您好，想请您书面确认：'+result.value.report.questions.slice(0,3).join(' ')+' 谢谢。':style.value==='明确协商'?'您好，为便于双方确认，我希望进一步明确以下事项：\n'+result.value.report.questions.join('\n')+'\n以上补充内容希望与贵方协商后写入协议，请您确认。':result.value.report.message}
@@ -40,9 +43,9 @@ onMounted(()=>work('正在连接本地服务…',async()=>{health.value=await ap
 </script>
 
 <template>
-  <header class="topbar"><a class="brand" href="/" aria-label="明约首页"><span class="brand-icon">约</span><strong>明约</strong><span>合同阅读助手</span></a><span class="local"><i></i> 单用户本地工作台</span></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="明约首页"><span class="brand-icon">约</span><strong>明约</strong><span>合同理解与承诺核验智能体</span></a><span class="local"><i></i> 单用户本地工作台</span></header>
   <main>
-    <div class="intro"><div><p class="audience">培训与求职辅导合同</p><h1>先看清约定，<br class="mobile-break">再做决定。</h1><p>把服务承诺、退出成本和待确认事项，放回原文里看。</p></div><div class="intro-note"><span class="small-heading">阅读的三个重点</span><p>交付什么 <span>／</span> 如何退出 <span>／</span> 还需问什么</p><small>辅助阅读与协商，不提供退款或就业结果保证。</small></div></div>
+    <div class="intro"><div><p class="audience">培训与求职辅导合同</p><h1>先看清约定，<br class="mobile-break">再做决定。</h1><p>把服务承诺、退出成本和待确认事项，放回原文里看。</p></div><div class="intro-note"><span class="small-heading">openJiuwen SDK · 合同核验工作流</span><p>交付什么 <span>／</span> 如何退出 <span>／</span> 还需问什么</p><small>辅助阅读与协商，不提供退款或就业结果保证。</small></div></div>
     <nav class="steps" aria-label="处理步骤"><button v-for="(label,index) in ['导入与背景','核对提取正文','阅读报告']" :key="label" :class="{active:step===index+1,done:step>index+1}" :disabled="(!!busy||toolBusy) || (index===1&&!doc) || (index===2&&!result)" @click="step=index+1"><span>{{index+1}}</span>{{label}}</button></nav>
     <div v-if="error" class="notice error" role="alert">{{error}}<button @click="error=''" aria-label="关闭提示">×</button></div>
     <div v-if="busy" class="notice progress" role="status"><span class="spinner"></span>{{busy}}</div>
@@ -76,10 +79,10 @@ onMounted(()=>work('正在连接本地服务…',async()=>{health.value=await ap
       </div>
       <aside class="paper analyze-panel"><h2>本次分析范围</h2><p>只分析左侧已提取或OCR识别的文字。未导入附件、未识别内容和图片含义不在分析范围内。</p><p class="muted">单次分析上限 {{health.max_analysis_chars.toLocaleString()}} 字符。超限会停止，不会截断。</p>
         <label class="check"><input type="checkbox" v-model="confirmed" :disabled="dirty"><span>我已核对正文与金额对应关系，了解上述覆盖范围。</span></label>
-        <hr><label>运行方式<select v-model="mode"><option value="demo">演示模式（无模型分析）</option><option value="live" :disabled="!health.model_configured">真实模型分析{{health.model_configured?'':'（未配置）'}}</option></select></label>
+        <hr><label>销售说法（可选，每行一条）<textarea v-model="workflowPromises" rows="3" maxlength="6000" placeholder="例如：保证安排正式岗位；不满意可以全额退费。请先去除个人信息。"></textarea></label><p class="muted">任务计划：分析合同并核验引用 → 有销售说法时逐条对照 → 按阅读目标检索法规参考 → 列出需你确认的下一步。</p><label>运行方式<select v-model="mode"><option value="demo">演示模式（无模型分析）</option><option value="live" :disabled="!health.model_configured">真实模型分析{{health.model_configured?'':'（未配置）'}}</option></select></label>
         <p v-if="mode==='demo'" class="notice">演示仅展示报告布局与引用跳转，不会判断你的合同风险。</p>
-        <template v-else><p class="muted">正文和背景将发送至后端配置的模型服务。系统会掩盖常见证件、账号、手机、邮箱和带标签姓名，但不能保证完全识别，请先手动清除其他敏感信息。</p><button @click="preview" :disabled="(!!busy||toolBusy)||dirty">预览脱敏正文</button><label class="check"><input type="checkbox" v-model="consent"><span>我同意发送脱敏正文及所填背景，用于本次合同阅读。</span></label></template>
-        <button class="primary full" @click="run" :disabled="(!!busy||toolBusy)||dirty||!confirmed||length>health.max_analysis_chars||(mode==='live'&&!consent)">{{mode==='demo'?'查看演示报告':'生成合同阅读报告'}}</button>
+        <template v-else><p class="muted">正文和背景将发送至后端配置的模型服务。系统会掩盖常见证件、账号、手机、邮箱和带标签姓名，但不能保证完全识别，请先手动清除其他敏感信息。</p><button @click="preview" :disabled="(!!busy||toolBusy)||dirty">预览脱敏正文</button><label class="check"><input type="checkbox" v-model="consent"><span>我同意发送脱敏正文、所填背景和销售说法，用于本次合同阅读与承诺对照。</span></label></template>
+        <button class="primary full" @click="run" :disabled="(!!busy||toolBusy)||dirty||!confirmed||length>health.max_analysis_chars||(mode==='live'&&!consent)">{{mode==='demo'?'查看演示报告':'运行合同核验任务'}}</button>
         <p class="muted" v-if="dirty">请先保存修订，再确认分析范围。</p><p class="notice error" v-if="length>health.max_analysis_chars">正文超过分析上限，长合同分析尚未实现。</p>
         <details class="future"><summary>当前版本的能力边界</summary><p>上方工具支持销售承诺对照、退款试算、OCR、法规选编检索、版本比较和本机历史。OCR须核对，试算不等于最终退款；法规条文不自动适用。</p></details>
       </aside>
@@ -88,7 +91,7 @@ onMounted(()=>work('正在连接本地服务…',async()=>{health.value=await ap
 
     <section v-if="step===3&&result&&doc">
       <div :class="['report-banner',result.mode==='demo'?'demo':'live']"><strong>{{result.mode==='demo'?'演示报告 · 未分析合同':'AI 辅助阅读报告'}}</strong><span>{{result.evidence_status}}</span><button @click="step=2" :disabled="(!!busy||toolBusy)">返回核对正文</button></div>
-      <div class="report-layout"><div class="report-main"><section class="paper report-summary"><h2>先看这几句话</h2><p>{{result.report.summary}}</p><small>{{result.coverage}} · 版本 {{result.version}}</small><p class="muted">{{result.scope_note}}</p><ul class="warnings"><li v-for="w in result.warnings" :key="w">{{w}}</li></ul></section>
+      <section v-if="workflowResult" class="paper" style="margin-bottom:24px"><h2>本次任务执行记录</h2><p class="muted" v-if="workflowResult.engine">运行引擎：{{workflowResult.engine}} {{workflowResult.sdk_version}} · {{workflowResult.nodes.length}} 个工作流节点</p><p v-if="workflowResult.partial" class="notice error">部分步骤失败，已保留完成的报告。失败步骤可在上方工具中单独重试。</p><ol><li v-for="(item,i) in workflowResult.trace" :key="i"><strong>{{item.name}} · {{item.status}}</strong><p>{{item.detail}}</p></li></ol><details v-if="workflowResult.references.length"><summary>查看检索到的法规参考（不代表已经适用）</summary><article v-for="(law,i) in workflowResult.references" :key="i"><h3>{{law.title}} {{law.article}}</h3><p>{{law.text}}</p></article><p class="muted">仅为本机选编关键词检索；完整来源与版本请在“法规检索”工具中核对。</p></details></section><div class="report-layout"><div class="report-main"><section class="paper report-summary"><h2>先看这几句话</h2><p>{{result.report.summary}}</p><small>{{result.coverage}} · 版本 {{result.version}}</small><p class="muted">{{result.scope_note}}</p><ul class="warnings"><li v-for="w in result.warnings" :key="w">{{w}}</li></ul></section>
       <section class="paper"><h2>合同里写了什么</h2><dl class="facts"><div v-for="f in result.report.facts" :key="f.label"><dt>{{factLabels[f.label] || f.label}}</dt><dd>{{f.value === '未发现明确约定' ? '这次提供的正文里，没找到明确说法' : f.value}}<button class="citation" v-for="e in f.evidence" :key="e.block_id+e.quote" @click="locate(e)">{{e.location}}</button></dd></div></dl></section>
       <section class="paper"><div class="section-heading"><h2>需要重点确认</h2><span>{{result.report.issues.length}} 项{{result.mode==='demo'?'布局示例':''}}</span></div><p v-if="!result.report.issues.length">在本次覆盖范围内未报告明显问题。这不代表合同不存在风险。</p>
         <article class="issue" v-for="(issue,i) in result.report.issues" :key="i"><div class="section-heading"><h3>{{issue.title}}</h3><span :class="['severity',issue.level==='高'?'high':issue.level==='中'?'medium':'low']">{{levelLabels[issue.level] || issue.level}}</span></div><p class="muted">{{issue.reason}} · {{statusLabels[issue.status] || issue.status}}</p><p><strong>这条在说什么：</strong>{{issue.explanation}}</p><p><strong>对你有什么影响：</strong>{{issue.impact}}</p><div class="ask"><p><strong>你可以直接这样问</strong><br>{{issue.question}}</p><p><strong>可以商量怎么改（需双方同意）</strong><br>{{issue.negotiation}}</p></div><p class="muted" v-if="issue.evidence.length">下面是合同原话，点击可以核对：</p><button class="quote" v-for="e in issue.evidence" :key="e.block_id+e.quote" @click="locate(e)"><q>{{e.quote}}</q><span>{{e.location}} · 定位原文</span></button></article>

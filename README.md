@@ -6,7 +6,7 @@
 
 双击桌面“启动合同检测助手.bat”。它调用项目 launch.ps1，后台启动并检查服务，地址为 http://127.0.0.1:8000/ 。已有服务时不会重复启动。项目 start.bat 也可在前台运行。
 
-全新环境运行 setup.ps1，安装 backend/requirements-lock.txt 中的Python依赖、执行npm ci并构建前端。本机验证Python 3.14、Node 24。密钥仅放在 backend/.env。
+全新环境运行 setup.ps1，安装 backend/requirements-lock.txt 中的Python依赖、执行npm ci并构建前端。SDK版本使用Python 3.11、Node 24。密钥仅放在 backend/.env。
 
 当前使用DeepSeek兼容Chat Completions接口。可配置 MODEL_BASE_URL、MODEL_API_KEY、MODEL_NAME、MODEL_RESPONSE_FORMAT、MODEL_TIMEOUT_SECONDS、MAX_ANALYSIS_CHARS。MODEL_TRUST_ENV=false 是本机模型连接设置，不关闭TLS证书验证。承诺对照要求模型支持JSON输出。
 
@@ -62,7 +62,7 @@
 
 ```powershell
 $testTemp = Join-Path (Split-Path (Get-Location)) ('work\pytest-' + [guid]::NewGuid().ToString('N'))
-..\.venv\Scripts\python.exe -m pytest tests -q --basetemp "$testTemp"
+..\.venv-jiuwen\Scripts\python.exe -m pytest tests -q --basetemp "$testTemp"
 cd ..\frontend
 npm.cmd run build
 ```
@@ -70,3 +70,18 @@ npm.cmd run build
 40项后端测试包含原有解析与引用回归、小数精度、输入边界、版本改动、历史恢复与版本校验、法规失败缓存回退、承诺虚假引用拦截、中文图片和扫描PDF真实OCR。浏览器用虚构材料验证DeepSeek承诺对照、退款试算、刷新后恢复、版本比较和法规原文展示。测试不是模型准确率或法律正确性认证。
 
 examples/fictional-scan.png 和 examples/fictional-scan.pdf 可用于OCR演示。Starlette TestClient的httpx迁移弃用警告不影响运行。
+
+## openJiuwen 参赛准备版（2026-10-26）
+
+核对页增加销售说法输入和一键任务编排；报告展示执行记录与法规参考。承诺步骤失败保留主报告，并允许在工具中重试；执行记录随报告历史保存。演示模式不会调用模型或伪造对照结果。完整方案和三分钟演示脚本位于 competition/。现已迁移至openJiuwen SDK工作流；没有自动报名或提交作品。
+
+## openJiuwen SDK 集成
+
+使用官方 PyPI 包 openjiuwen==0.1.18（Python>=3.11,<3.14），独立环境 .venv-jiuwen；旧 .venv 保留，启动脚本已切换至SDK环境。setup.ps1 使用 py -3.11 创建新环境并安装锁定依赖。
+
+backend/app/jiuwen_workflow.py 定义确认、分析、承诺、法规、汇总五个WorkflowComponent节点，使用Workflow/WorkflowCard/add_connection/create_workflow_session/invoke真实调度。每个请求创建独立图和会话，执行上限1800秒。节点不自动重试付费模型调用；沿用分析适配器原有受限重试。SDK收到的输入输出只有状态，正文及报告存放在请求内闭包，不进入SDK跟踪载荷或检查点。当前不提供跨进程断点恢复。
+
+主报告失败会阻断后续业务操作；承诺和法规辅助失败保留报告。DeepSeek仍是模型供应商，与openJiuwen工作流引擎并不冲突。健康检查和界面显示SDK版本，缺少SDK时启动失败，不静默切回原生编排。
+
+官方参考：https://pypi.org/project/openjiuwen/ ，https://github.com/openJiuwen-ai/agent-core 。
+迁移前备份：同级 contract-review-agent-before-sdk-20261026；源码、配置及历史已复制，依赖环境仍留在原项目，备份含敏感信息，不用于上传。

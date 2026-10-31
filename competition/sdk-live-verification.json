@@ -1,0 +1,42 @@
+{
+  "engine": "openJiuwen",
+  "sdk_version": "0.1.18",
+  "nodes": [
+    "confirm",
+    "analyze",
+    "promises",
+    "legal",
+    "finalize"
+  ],
+  "partial": false,
+  "trace": [
+    {
+      "name": "正文核对",
+      "status": "完成",
+      "detail": "用户确认版本 1，共 3 个文本块。"
+    },
+    {
+      "name": "合同分析与引用核验",
+      "status": "完成",
+      "detail": "引用出处已校验；解释仍需人工复核。"
+    },
+    {
+      "name": "销售承诺核验",
+      "status": "完成",
+      "detail": "已逐条对照合同；结果见销售承诺工具。"
+    },
+    {
+      "name": "法规参考检索",
+      "status": "完成",
+      "detail": "本机选编检索“格式条款 承诺”，显示 3 条参考；不自动认定适用。"
+    },
+    {
+      "name": "退款与下一步",
+      "status": "待确认",
+      "detail": "如需试算，请在退款工具核对实付、已用服务及扣费依据；系统不猜金额。草稿由你检查后自行发送。"
+    }
+  ],
+  "promise_statuses": [
+    "说法不一致"
+  ]
+}

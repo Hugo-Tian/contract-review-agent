@@ -5,12 +5,12 @@ $url = 'http://127.0.0.1:8000'
 function Test-ProjectReady {
     try {
         $health = Invoke-RestMethod -Uri "$url/api/health" -TimeoutSec 2
-        return ($health.mode -eq 'single-user-local' -and $null -ne $health.capabilities)
+        return ($health.mode -eq 'single-user-local' -and $health.workflow_engine -eq 'openJiuwen')
     } catch { return $false }
 }
 try {
     if (!(Test-ProjectReady)) {
-        $python = Join-Path $projectRoot '.venv\Scripts\python.exe'
+        $python = Join-Path $projectRoot '.venv-jiuwen\Scripts\python.exe'
         if (!(Test-Path -LiteralPath $python)) { throw 'Python environment missing. Run setup.ps1 first.' }
         if (!(Test-Path -LiteralPath (Join-Path $projectRoot 'frontend\dist\index.html'))) { throw 'Frontend build missing. Run setup.ps1 first.' }
         $logDir = Join-Path $projectRoot 'work'
