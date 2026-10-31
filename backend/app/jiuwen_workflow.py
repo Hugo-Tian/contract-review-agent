@@ -58,7 +58,7 @@ async def run_contract_workflow(body, require_doc, report, promises):
         if body.promises.strip() and body.mode == 'live':
             store.delete_tool(doc.id, doc.version, 'promises')
             try:
-                promise_output = await promises(PromiseRequest(document_id=doc.id, version=doc.version, promises=body.promises, consent=body.consent))
+                promise_output = await promises(PromiseRequest(document_id=doc.id, version=doc.version, promises=body.promises, consent=body.consent, output_language=body.context.output_language))
                 trace.append({'name': labels['promise_step'], 'status': '完成', 'detail': labels['promise_done']})
             except (HTTPException, ValueError) as exc:
                 trace.append({'name': labels['promise_step'], 'status': '失败', 'detail': str(exc.detail) if isinstance(exc, HTTPException) else str(exc)})

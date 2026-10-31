@@ -20,6 +20,8 @@ async def compare_promises(doc, request):
     blocks, catalog = evidence_catalog(masked_document(doc))
     payload = {'promises': [{'promise_id': i, 'text': redact(p)} for i, p in enumerate(promises, 1)], 'blocks': blocks,
                'schema': PromiseResult.model_json_schema(), 'coverage': doc.coverage}
+    if request.output_language:
+        payload['output_language'] = request.output_language
     system = profile['system']
     body = {'model': os.environ['MODEL_NAME'], 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}], 'response_format': {'type': 'json_object'}, 'max_tokens': 7000}
     if os.getenv('MODEL_THINKING') in ('enabled', 'disabled'):
@@ -81,15 +83,17 @@ def refund(body):
 
 
 def compare_versions(left, right):
+    profile = current()
     # Ignore pagination/line wrapping, but preserve all non-whitespace characters.
     def lines(doc):
-        import re
         result = []
         for block in doc.blocks:
-            for part in re.split(r'(?<=[。；！？])', block.text):
-                text = re.sub(r'\s+', '', part)
-                if text:
-                    result.append((text, block.location))
+            if 'compare_note' in profile.tools:
+                # English text needs its word spaces; collapse runs of whitespace instead of deleting them.
+                parts = [re.sub(r'\s+', ' ', part).strip() for part in profile.split_sentences(block.text)]
+            else:
+                parts = [re.sub(r'\s+', '', part) for part in re.split(r'(?<=[。；！？])', block.text)]
+            result.extend((text, block.location) for text in parts if text)
         return result
     a, b = lines(left), lines(right)
     if sum(len(t) for t, _ in a + b) > 100000:
@@ -102,4 +106,95 @@ def compare_versions(left, right):
                             'before': [{'text': t, 'location': loc} for t, loc in a[i:j]],
                             'after': [{'text': t, 'location': loc} for t, loc in b[k:l]]})
     return {'left': {'name': left.name, 'version': left.version}, 'right': {'name': right.name, 'version': right.version}, 'changes': changes,
-            'note': '逐句文字比较，忽略空格和换行；不比较图片、印章或版式。分页变化和OCR误字可能被标成改动，请回原件核对。'}
+            'note': profile.tools.get('compare_note', '逐句文字比较，忽略空格和换行；不比较图片、印章或版式。分页变化和OCR误字可能被标成改动，请回原件核对。')}
+
+
+def cents(value):
+    return value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+
+
+def require_tool(name):
+    if name not in current().tools:
+        raise ValueError('当前地区没有这个工具。')
+    return current().tools
+
+
+def deposit(body):
+    """Move-out settlement from user-confirmed figures only; never guesses or judges legality."""
+    tools = require_tool('deposit_note')
+    unit = current().currency['code']
+    rows = [{**d.model_dump(mode='json'), 'amount': str(cents(d.amount))} for d in body.deductions]
+    deductions = sum((d.amount for d in body.deductions), Decimal('0'))
+    penalty = {'none': Decimal('0'), 'months_rent': body.monthly_rent * body.penalty_months,
+               'fixed': body.penalty_amount, 'forfeit_deposit': body.deposit}[body.penalty_type]
+    penalty = cents(penalty)
+    held = body.deposit + body.prepaid_rent
+    scenarios = []
+    for title, fee in [('只扣欠租和你确认的扣减项', Decimal('0.00')), ('再按合约扣提前退租罚则', penalty)]:
+        balance = cents(held - body.rent_arrears - deductions - fee)
+        scenarios.append({'title': title, 'penalty': str(fee), 'balance': str(balance),
+                          'estimated_return': str(max(balance, Decimal('0.00'))), 'excess_deductions': str(cents(max(-balance, Decimal('0')))),
+                          'formula': f'{unit} {body.deposit} + {body.prepaid_rent} − {body.rent_arrears} − {cents(deductions)} − {fee} = {balance}'})
+    return {'inputs': body.model_dump(mode='json'), 'deductions': rows, 'deductions_total': str(cents(deductions)),
+            'penalty_type': body.penalty_type, 'scenarios': scenarios, 'currency': unit, 'note': tools['deposit_note']}
+
+
+def upfront(body):
+    tools = require_tool('upfront_note')
+    unit = current().currency['code']
+    stamp = cents(body.stamp_duty_total * body.stamp_duty_share / 100)
+    commission = cents(body.commission_base * body.commission_rate / 100)
+    others = sum((o.amount for o in body.others), Decimal('0'))
+    total = cents(body.first_rent + body.deposit + stamp + commission + others)
+    items = [{'name': '首期租金', 'amount': str(cents(body.first_rent)), 'formula': str(body.first_rent)},
+             {'name': '按金', 'amount': str(cents(body.deposit)), 'formula': str(body.deposit)},
+             {'name': '印花税（你分担的部分）', 'amount': str(stamp), 'formula': f'{body.stamp_duty_total} × {body.stamp_duty_share}%'},
+             {'name': '中介佣金', 'amount': str(commission), 'formula': f'{body.commission_base} × {body.commission_rate}%'}]
+    items += [{'name': o.name, 'amount': str(cents(o.amount)), 'formula': str(o.amount), 'basis': o.basis} for o in body.others]
+    return {'inputs': body.model_dump(mode='json'), 'items': items, 'total': str(total), 'currency': unit,
+            'formula': f'{unit} ' + ' + '.join(i['amount'] for i in items) + f' = {total}', 'note': tools['upfront_note']}
+
+
+def checklist(doc, snapshot):
+    """Offline, rule-based. Every item cites lease text it found, or says plainly what was not found."""
+    tools = require_tool('checklist')
+    result = snapshot.get('result') or {}
+    if result.get('mode') != 'live':
+        raise ValueError('核对清单需要真实分析报告；演示报告没有从租约提取事实。')
+    facts = {f['label']: f for f in result['report']['facts']}
+    masked = masked_document(doc)
+    texts = {b.id: b.text for b in masked.blocks}
+    _, catalog = evidence_catalog(masked)
+    items = []
+
+    def verified(evidence):
+        # Report evidence was checked when the report was made; check again against this exact version.
+        return [e for e in evidence if e['quote'] in texts.get(e['block_id'], '')]
+
+    for rule in tools['checklist']:
+        if 'fact' in rule:
+            fact = facts.get(rule['fact'])
+            evidence = verified(fact['evidence']) if fact and fact['value'] != '未发现明确约定' else []
+            for label in rule['related']:
+                related = facts.get(label)
+                if evidence and related and related['value'] != '未发现明确约定':
+                    evidence += verified(related['evidence'])
+            source = rule['fact']
+        else:
+            pattern = re.compile(rule['keyword'], re.I)
+            evidence = [e.model_dump() for e in catalog.values() if pattern.search(e.quote)][:3]
+            source = '租约原文关键词'
+        key = 'found' if evidence else 'missing'
+        if key not in rule:
+            continue
+        title, why = rule[key]
+        items.append({'title': title, 'why': why, 'basis': '租约原文' if evidence else '本次正文未找到', 'source': source, 'evidence': evidence})
+    covered = {rule['fact'] for rule in tools['checklist'] if 'fact' in rule}
+    for label, fact in facts.items():
+        if label not in covered and fact['value'] == '未发现明确约定':
+            items.append({'title': f'签约前问清：{label}', 'why': f'本次正文里没找到关于“{label}”的明确写法（只限本次导入的文字）。可以请对方说明，并要求写进租约。',
+                          'basis': '本次正文未找到', 'source': label, 'evidence': []})
+    text = json.dumps([{k: v for k, v in item.items() if k != 'evidence'} for item in items], ensure_ascii=False)
+    if current().report_forbidden.search(text):
+        raise ValueError('核对清单文案包含不允许的判断，请报告此问题。')
+    return {'items': items, 'note': tools['checklist_note'], 'report_id': result['report_id']}

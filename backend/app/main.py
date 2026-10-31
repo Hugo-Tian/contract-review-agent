@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.exceptions import RequestValidationError
 from .schemas import Document, Block, TextInput, Revision, AnalysisRequest
-from .tool_schemas import PromiseRequest, RefundRequest, CompareRequest, SaveRequest
+from .tool_schemas import PromiseRequest, RefundRequest, CompareRequest, SaveRequest, DepositRequest, UpfrontRequest, ChecklistRequest
 from . import history, legal, contract_tools
 from . import store
 from .jiuwen_workflow import SDK_VERSION, run_contract_workflow
@@ -58,8 +58,10 @@ async def local_only(request: Request, call_next):
 @app.exception_handler(RequestValidationError)
 async def validation_error(request, exc):
     # Never reflect sensitive submitted values or exception input.
-    if request.url.path == '/api/tools/refund':
-        return JSONResponse({'detail': current().messages['refund_validation']}, status_code=422)
+    messages = {'/api/tools/refund': 'refund_validation', '/api/tools/deposit': 'deposit_validation', '/api/tools/upfront': 'upfront_validation'}
+    key = messages.get(request.url.path)
+    if key and key in current().messages:
+        return JSONResponse({'detail': current().messages[key]}, status_code=422)
     return JSONResponse({'detail': '提交的数据格式不正确，请检查输入内容和版本。'}, status_code=422)
 
 
@@ -229,6 +231,35 @@ async def refund(body: RefundRequest, document_id: str | None = None, version: i
     if document_id:
         doc = require_doc(document_id, version)
         store.put_tool(doc.id, doc.version, 'refund', result)
+    return result
+
+
+@app.post('/api/tools/deposit')
+async def deposit(body: DepositRequest, document_id: str | None = None, version: int | None = None):
+    result = contract_tools.deposit(body)
+    if document_id:
+        doc = require_doc(document_id, version)
+        store.put_tool(doc.id, doc.version, 'deposit', result)
+    return result
+
+
+@app.post('/api/tools/upfront')
+async def upfront(body: UpfrontRequest, document_id: str | None = None, version: int | None = None):
+    result = contract_tools.upfront(body)
+    if document_id:
+        doc = require_doc(document_id, version)
+        store.put_tool(doc.id, doc.version, 'upfront', result)
+    return result
+
+
+@app.post('/api/tools/checklist')
+async def checklist(body: ChecklistRequest):
+    doc = require_doc(body.document_id, body.version)
+    snapshot = store.get_report(body.report_id)
+    if not snapshot or snapshot['document']['id'] != doc.id or snapshot['document']['version'] != doc.version:
+        raise HTTPException(409, '报告与当前文档版本不匹配，请重新生成报告。')
+    result = contract_tools.checklist(doc, snapshot)
+    store.put_tool(doc.id, doc.version, 'checklist', result)
     return result
 
 

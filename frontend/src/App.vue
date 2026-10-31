@@ -57,7 +57,7 @@ onMounted(()=>work('正在连接本地服务…',async()=>{profile.value=await a
     <div v-if="toast" class="toast" role="status">{{toast}}</div>
 
     <p v-if="dirty" class="notice">正文有尚未保存的修改，请先保存新版本，再使用合同工具。</p>
-    <ToolsPanel :inert="!!busy||dirty" @busy="toolBusy=$event" :doc="doc" :result="result" :profile="profile" :restored-tools="restoredTools" :draft="message" @restore="restoreSnapshot" @import="step=1" />
+    <ToolsPanel :inert="!!busy||dirty" @busy="toolBusy=$event" :doc="doc" :result="result" :profile="profile" :language="context.output_language" :restored-tools="restoredTools" :draft="message" @restore="restoreSnapshot" @import="step=1" />
     <section v-if="step===1" class="input-grid">
       <div class="paper"><div class="section-heading"><h2>导入你的合同</h2><span>PDF / DOCX / 图片 / 文本</span></div>
         <div v-if="doc" class="notice">已载入「{{doc.name}}」。<button :disabled="(!!busy||toolBusy)" @click="step=2">继续核对</button><button :disabled="(!!busy||toolBusy)" @click="reset">清除后重新导入</button></div>

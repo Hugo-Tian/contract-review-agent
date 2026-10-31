@@ -33,6 +33,8 @@ class Profile:
     workflow: dict
     messages: dict
     ui: dict = field(default_factory=dict)
+    # Region-only tools (e.g. HK deposit calculator, checklist rules); absent tools are refused.
+    tools: dict = field(default_factory=dict)
 
     @property
     def ready(self):
