@@ -19,9 +19,11 @@ from . import store
 from .jiuwen_workflow import SDK_VERSION, run_contract_workflow
 from .analysis import configured, demo_report, analyze, ModelFailure, masked_document
 from .parsing import MAX_FILE
+from .profiles import current
 
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / 'backend' / '.env')
+current()  # Fail at startup on an unknown REGION instead of on the first request.
 analysis_lock = asyncio.Lock()
 parse_lock = asyncio.Lock()
 
@@ -57,7 +59,7 @@ async def local_only(request: Request, call_next):
 async def validation_error(request, exc):
     # Never reflect sensitive submitted values or exception input.
     if request.url.path == '/api/tools/refund':
-        return JSONResponse({'detail': '请检查退款试算：金额须为非负数且最多两位小数，比例为0至100，已退款不得超过实付。服务名称、扣费依据和确认勾选不能遗漏；计算违约金时还需填写基数和依据。'}, status_code=422)
+        return JSONResponse({'detail': current().messages['refund_validation']}, status_code=422)
     return JSONResponse({'detail': '提交的数据格式不正确，请检查输入内容和版本。'}, status_code=422)
 
 
@@ -78,7 +80,12 @@ def require_doc(doc_id: str, version: int | None = None):
 @app.get('/api/health')
 async def health():
     return {'model_configured': configured(), 'max_analysis_chars': int(os.getenv('MAX_ANALYSIS_CHARS', '24000')),
-            'mode': 'single-user-local', 'workflow_engine': 'openJiuwen', 'sdk_version': SDK_VERSION, 'capabilities': {'ocr': True, 'legal_search': True, 'refund': True, 'comparison': True, 'history': True, 'promises': True, 'workflow': True}}
+            'mode': 'single-user-local', 'region': current().region, 'ready': current().ready, 'workflow_engine': 'openJiuwen', 'sdk_version': SDK_VERSION, 'capabilities': {'ocr': True, 'legal_search': True, 'refund': True, 'comparison': True, 'history': True, 'promises': True, 'workflow': True}}
+
+
+@app.get('/api/profile')
+async def profile():
+    return current().public()
 
 
 @app.post('/api/documents/text')
@@ -165,6 +172,8 @@ async def report(body: AnalysisRequest):
     if body.mode == 'live':
         if not configured():
             raise HTTPException(503, '未配置真实模型，请在后端 .env 设置地址、密钥及模型。')
+        if not current().ready['analysis']:
+            raise HTTPException(503, current().messages['not_ready'])
         if not body.consent:
             raise HTTPException(400, '请先确认同意将脱敏正文与背景发送给配置的模型服务。')
         if analysis_lock.locked():
@@ -196,9 +205,11 @@ async def document_versions(doc_id: str):
 async def promises(body: PromiseRequest):
     doc = require_doc(body.document_id, body.version)
     if not body.consent:
-        raise HTTPException(400, '请同意发送脱敏合同与销售说法。')
+        raise HTTPException(400, current().promise['consent_error'])
     if not configured():
         raise HTTPException(503, '未配置真实模型。')
+    if not current().ready['promises']:
+        raise HTTPException(503, current().messages['not_ready'])
     if sum(len(b.text) for b in doc.blocks) > int(os.getenv('MAX_ANALYSIS_CHARS', '24000')):
         raise HTTPException(413, '合同正文过长，请拆分后对照。')
     if analysis_lock.locked():

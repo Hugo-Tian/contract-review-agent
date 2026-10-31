@@ -7,6 +7,7 @@ from openjiuwen.core.session import WORKFLOW_EXECUTE_TIMEOUT
 from .schemas import AnalysisRequest
 from .tool_schemas import PromiseRequest
 from . import store, legal
+from .profiles import current
 
 SDK_VERSION = version('openjiuwen')
 NODE_IDS = ('confirm', 'analyze', 'promises', 'legal', 'finalize')
@@ -35,6 +36,7 @@ async def run_contract_workflow(body, require_doc, report, promises):
     trace, references = [], []
     output = promise_output = None
     state = {'executed': []}
+    labels = current().workflow
 
     async def confirm():
         nonlocal doc, trace, output, promise_output, references
@@ -57,17 +59,19 @@ async def run_contract_workflow(body, require_doc, report, promises):
             store.delete_tool(doc.id, doc.version, 'promises')
             try:
                 promise_output = await promises(PromiseRequest(document_id=doc.id, version=doc.version, promises=body.promises, consent=body.consent))
-                trace.append({'name': '销售承诺核验', 'status': '完成', 'detail': '已逐条对照合同；结果见销售承诺工具。'})
+                trace.append({'name': labels['promise_step'], 'status': '完成', 'detail': labels['promise_done']})
             except (HTTPException, ValueError) as exc:
-                trace.append({'name': '销售承诺核验', 'status': '失败', 'detail': str(exc.detail) if isinstance(exc, HTTPException) else str(exc)})
+                trace.append({'name': labels['promise_step'], 'status': '失败', 'detail': str(exc.detail) if isinstance(exc, HTTPException) else str(exc)})
         else:
-            trace.append({'name': '销售承诺核验', 'status': '跳过', 'detail': '未提供销售说法，或当前为演示模式。'})
+            trace.append({'name': labels['promise_step'], 'status': '跳过', 'detail': labels['promise_skipped']})
 
     async def legal_step():
         nonlocal doc, trace, output, promise_output, references
         references = []
-        if body.mode == 'live':
-            query = '退款 违约金' if body.context.goal == '了解退款' else '格式条款 承诺'
+        if body.mode == 'live' and not current().ready['legal']:
+            trace.append({'name': '法规参考检索', 'status': '跳过', 'detail': current().legal['note']})
+        elif body.mode == 'live':
+            query = labels['goal_queries'].get(body.context.goal, labels['default_query'])
             try:
                 found = legal.search(query)
                 references = found['results'][:3]
@@ -79,7 +83,7 @@ async def run_contract_workflow(body, require_doc, report, promises):
 
     async def finalize():
         nonlocal doc, trace, output, promise_output, references
-        trace.append({'name': '退款与下一步', 'status': '待确认', 'detail': '如需试算，请在退款工具核对实付、已用服务及扣费依据；系统不猜金额。草稿由你检查后自行发送。'})
+        trace.append({'name': labels['final_step'], 'status': '待确认', 'detail': labels['final_detail']})
         require_doc(doc.id, doc.version)
         output['workflow'] = {'engine': 'openJiuwen', 'sdk_version': SDK_VERSION, 'nodes': list(NODE_IDS), 'trace': trace, 'references': references, 'partial': any(t['status'] == '失败' for t in trace), 'promises': promise_output}
         snapshot = store.get_report(output['report_id'])

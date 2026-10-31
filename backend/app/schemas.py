@@ -1,5 +1,6 @@
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .profiles import current, cn
 
 
 class StrictModel(BaseModel):
@@ -27,8 +28,9 @@ class Document(StrictModel):
 
 
 class Context(StrictModel):
-    role: Literal['学员', '付款家长'] = '学员'
-    goal: Literal['签约前检查', '付款后核对', '了解退款'] = '签约前检查'
+    # Options come from the active region profile; empty means its first option.
+    role: str = Field(default='', max_length=20)
+    goal: str = Field(default='', max_length=20)
     signed: Literal['未知', '是', '否'] = '未知'
     paid: Literal['未知', '是', '否'] = '未知'
     amount: str = Field(default='', max_length=40)
@@ -36,6 +38,15 @@ class Context(StrictModel):
     paid_date: str = Field(default='', max_length=20)
     services: str = Field(default='', max_length=2000)
     preferences: str = Field(default='', max_length=2000)
+
+    @model_validator(mode='after')
+    def region_options(self):
+        options = current().context
+        self.role = self.role or options.roles[0]
+        self.goal = self.goal or options.goals[0]
+        if self.role not in options.roles or self.goal not in options.goals:
+            raise ValueError('身份或阅读目标不属于当前地区的选项。')
+        return self
 
 
 class AnalysisRequest(StrictModel):
@@ -52,7 +63,8 @@ class Evidence(StrictModel):
     location: str
 
 
-FACT_LABELS = ['签约主体', '收款主体', '成交金额', '分项价格', '服务期限', '服务内容', '交付标准', '退款条件', '违约责任', '争议解决']
+# Mainland labels under the old name for existing imports; validation uses the active profile.
+FACT_LABELS = list(cn.FACT_LABELS)
 
 
 class Fact(StrictModel):

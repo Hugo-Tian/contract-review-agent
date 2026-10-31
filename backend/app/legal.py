@@ -7,13 +7,19 @@ from pathlib import Path
 import httpx
 from bs4 import BeautifulSoup
 
+from .profiles import current, cn
+
+# One cached corpus per region. CORPUS/SOURCES keep their mainland meaning for existing callers.
 CORPUS = Path(__file__).with_name('legal_corpus.json')
-SOURCES = [
-    {'id': 'civil', 'title': '中华人民共和国民法典', 'url': 'https://www.cac.gov.cn/2020-06/01/c_15925617772683192.htm', 'effective': '2021-01-01', 'edition': '2020年公布版本', 'articles': ['第四百六十五条', '第四百六十六条', '第四百六十九条', '第四百七十三条', '第四百九十六条', '第四百九十七条', '第四百九十八条', '第五百零六条', '第五百零九条', '第五百一十条', '第五百四十三条', '第五百六十二条', '第五百六十三条', '第五百六十五条', '第五百六十六条', '第五百七十七条', '第五百八十四条', '第五百八十五条']},
-    {'id': 'consumer', 'title': '中华人民共和国消费者权益保护法', 'url': 'https://www.samr.gov.cn/zfjcj/tzgg/art/2023/art_615af9ed6bcd4974bf853dd2e02bc663.html', 'effective': '2014-03-15', 'edition': '2013年修正版本', 'articles': ['第二条', '第八条', '第九条', '第十条', '第二十条', '第二十六条', '第三十九条', '第五十三条']},
-    {'id': 'regulation', 'title': '中华人民共和国消费者权益保护法实施条例', 'url': 'https://www.mee.gov.cn/zcwj/gwywj/202403/t20240320_1068830.shtml', 'effective': '2024-07-01', 'edition': '国务院令第778号', 'articles': ['第九条', '第十二条', '第十七条', '第二十二条']},
-    {'id': 'prepaid', 'title': '最高人民法院关于审理预付式消费民事纠纷案件适用法律若干问题的解释', 'url': 'https://www.court.gov.cn/zixun/xiangqing/459321.html', 'effective': '2025-05-01', 'edition': '法释〔2025〕4号', 'articles': ['第一条', '第五条', '第六条', '第八条', '第十二条', '第十三条', '第十四条', '第十五条', '第十六条', '第十七条', '第十八条', '第十九条', '第二十条', '第二十一条', '第二十二条', '第二十五条']},
-]
+HK_CORPUS = Path(__file__).with_name('legal_corpus_hk.json')
+SOURCES = cn.LEGAL_SOURCES
+
+
+def corpus_path(region=None):
+    # Looked up at call time so tests can monkeypatch CORPUS / HK_CORPUS.
+    return {'cn': CORPUS, 'hk': HK_CORPUS}[region or current().region]
+
+
 refresh_lock = asyncio.Lock()
 
 
@@ -41,14 +47,19 @@ def extract_articles(html, source):
 
 
 def load():
-    if CORPUS.exists():
-        return json.loads(CORPUS.read_text(encoding='utf-8'))
+    path = corpus_path()
+    if path.exists():
+        return json.loads(path.read_text(encoding='utf-8'))
     return {'articles': [], 'sources': [], 'updated': None}
 
 
 async def refresh():
+    profile = current()
+    if not profile.legal['sources']:
+        return {'sources': [], 'updated': None, 'count': 0, 'error': profile.legal['note']}
     async with refresh_lock:
         previous = load()
+        target = corpus_path(profile.region)
         now = datetime.now(timezone.utc).isoformat()
         async with httpx.AsyncClient(timeout=25, trust_env=False, follow_redirects=False) as client:
             async def fetch(source):
@@ -62,22 +73,23 @@ async def refresh():
                 except (httpx.HTTPError, ValueError):
                     rows = [r for r in previous['articles'] if r['id'].startswith(source['id'] + ':')]
                     return source, rows, '连接失败或页面结构变化，保留已有缓存；请打开官方来源核对。'
-            results = await asyncio.gather(*(fetch(s) for s in SOURCES))
+            results = await asyncio.gather(*(fetch(s) for s in profile.legal['sources']))
         articles, sources = [], []
         for source, rows, error in results:
             articles.extend(rows)
             sources.append({'title': source['title'], 'url': source['url'], 'count': len(rows), 'error': error})
         corpus = {'articles': articles, 'sources': sources, 'updated': now}
-        temp = CORPUS.with_suffix('.tmp')
+        temp = target.with_suffix('.tmp')
         temp.write_text(json.dumps(corpus, ensure_ascii=False, indent=2), encoding='utf-8')
-        temp.replace(CORPUS)
+        temp.replace(target)
         return {'sources': sources, 'updated': now, 'count': len(articles)}
 
 
 def search(query):
+    profile = current()
     data = load()
     q = query.strip()
-    aliases = {'退款': ['退还', '返还', '预付款', '解除'], '退费': ['退还', '返还', '预付款'], '销售': ['承诺', '宣传', '广告'], '口头': ['口头', '承诺'], '霸王': ['格式条款'], '违约金': ['违约金', '损失'], '课程': ['培训', '服务'], '承诺': ['承诺', '宣传', '合同内容']}
+    aliases = profile.legal['aliases']
     terms = set(re.findall(r'[\u4e00-\u9fffA-Za-z0-9]+', q))
     for key, values in aliases.items():
         if key in q:
@@ -92,4 +104,4 @@ def search(query):
             ranked.append((score, article))
     ranked.sort(key=lambda item: item[0], reverse=True)
     return {'query': q, 'results': [r for _, r in ranked[:15]], 'total_matches': len(ranked), 'count': len(data['articles']), 'sources': data['sources'],
-            'note': '检索范围为4部官方法律法规及司法解释中的合同、预付消费相关条文选编，不是全国法规库。网页获取成功不等于已确认现行有效；请核对版本及适用时间。结果是原文参考，不自动判断本合同适用哪条法律。'}
+            'note': profile.legal['note']}
