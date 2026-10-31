@@ -8,6 +8,10 @@ import re
 class ContextOptions:
     roles: tuple[str, ...]
     goals: tuple[str, ...]
+    # Empty tuples mean the region has no such choice and the field must stay empty.
+    languages: tuple[str, ...] = ()
+    channels: tuple[str, ...] = ()
+    recipients: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -20,7 +24,8 @@ class Profile:
     fact_labels: tuple[str, ...]
     redact: Callable[[str], str]
     report_forbidden: re.Pattern
-    sentence_pattern: str
+    # Partitions block text into excerpts; the pieces must concatenate back to the input.
+    split_sentences: Callable[[str], list[str]]
     context: ContextOptions
     demo: dict
     promise: dict
@@ -37,5 +42,6 @@ class Profile:
     def public(self):
         """Only display copy and options; never prompts or redaction internals."""
         return {'region': self.region, 'name': self.name, 'currency': self.currency, 'fact_labels': list(self.fact_labels),
-                'context': {'roles': list(self.context.roles), 'goals': list(self.context.goals)},
+                'context': {'roles': list(self.context.roles), 'goals': list(self.context.goals), 'languages': list(self.context.languages),
+                            'channels': list(self.context.channels), 'recipients': list(self.context.recipients)},
                 'ready': self.ready, 'ui': self.ui}

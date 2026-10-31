@@ -75,17 +75,14 @@ def test_hk_demo_and_validation_use_hk_fact_labels(client, monkeypatch):
         analysis.validate_evidence(report, store.get(doc['id']))
 
 
-def test_hk_live_calls_refused_until_prompts_exist(client, monkeypatch):
+def test_hk_promise_tool_refused_until_its_prompt_exists(client, monkeypatch):
     monkeypatch.setenv('REGION', 'hk')
     monkeypatch.setenv('MODEL_API_KEY', 'test'); monkeypatch.setenv('MODEL_NAME', 'test')
     forbid_network(monkeypatch)
+    assert current().ready == {'analysis': True, 'promises': False, 'legal': False}
     doc = client.post('/api/documents/text', json={'text': 'Deposit HK$24,000.'}).json()
-    live = client.post('/api/analyze', json={'document_id': doc['id'], 'version': 1, 'mode': 'live', 'consent': True})
-    assert live.status_code == 503 and '香港版' in live.json()['detail']
     promise = client.post('/api/tools/promises', json={'document_id': doc['id'], 'version': 1, 'promises': '家电坏了包修', 'consent': True})
-    assert promise.status_code == 503
-    with pytest.raises(analysis.ModelFailure):
-        asyncio.run(analysis.analyze(document(), Context()))
+    assert promise.status_code == 503 and '香港版' in promise.json()['detail']
     with pytest.raises(contract_tools.ModelFailure):
         asyncio.run(contract_tools.compare_promises(document(), PromiseRequest(document_id='x', version=1, promises='包修', consent=True)))
 

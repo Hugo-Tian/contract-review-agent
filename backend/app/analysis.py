@@ -147,7 +147,7 @@ def evidence_catalog(doc: Document):
     payload, catalog = [], {}
     for block in doc.blocks:
         passages = []
-        pieces = re.findall(current().sentence_pattern, block.text)
+        pieces = current().split_sentences(block.text)
         for piece in pieces:
             # Bound excerpts while preserving every original character in sequence.
             while piece:
@@ -190,7 +190,7 @@ async def analyze(doc: Document, context: Context):
     blocks, catalog = evidence_catalog(masked)
     payload = {'blocks': blocks,
                'coverage': doc.coverage, 'warnings': doc.warnings,
-               'context': {k: redact(str(v)) for k, v in context.model_dump().items()},
+               'context': {k: redact(str(v)) for k, v in context.for_model().items()},
                'required_facts': list(profile.fact_labels), 'schema': ModelReport.model_json_schema()}
     body = {'model': os.environ['MODEL_NAME'], 'messages': [
         {'role': 'system', 'content': profile.system},

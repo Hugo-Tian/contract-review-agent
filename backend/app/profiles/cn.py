@@ -89,7 +89,7 @@ PROFILE = Profile(
     system=SYSTEM, fact_labels=FACT_LABELS, redact=redact,
     report_forbidden=re.compile(r'https?://|(?:民法典|消费者权益保护法|劳动合同法|《[^》]+》)第[一二三四五六七八九十百零〇\d]+条|必然无效|一定退款|保证退款|构成诈骗'),
     # Chinese sentence boundaries; preserve whitespace and decimal clause numbers.
-    sentence_pattern=r'[^。；！？]*[。；！？]|[^。；！？]+$',
+    split_sentences=lambda text: re.findall(r'[^。；！？]*[。；！？]|[^。；！？]+$', text),
     context=ContextOptions(roles=('学员', '付款家长'), goals=('签约前检查', '付款后核对', '了解退款')),
     demo={'summary': '这是界面演示，尚未对你的合同作出分析。请检查提取正文，配置模型并同意发送脱敏文本后，使用真实分析。',
           'title': '示例：点击引用，核对原文位置', 'reason': '仅演示报告布局，不代表合同风险程度。',

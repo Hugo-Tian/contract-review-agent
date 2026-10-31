@@ -20,7 +20,7 @@ const edits = reactive<Record<string,string>>({}), confirmed = ref(false), conse
 const mode = ref<'demo'|'live'>('demo'), highlighted = ref(''), outbound = ref<Document|null>(null)
 const message = ref(''), style = ref('礼貌直接')
 watch(workflowPromises,()=>{consent.value=false})
-function blankContext(){return {role:profile.value?.context.roles[0]??'',goal:profile.value?.context.goals[0]??'',signed:'未知',paid:'未知',amount:'',signed_date:'',paid_date:'',services:'',preferences:''}}
+function blankContext(){const c=profile.value?.context;return {role:c?.roles[0]??'',goal:c?.goals[0]??'',signed:'未知',paid:'未知',amount:'',signed_date:'',paid_date:'',services:'',preferences:'',output_language:c?.languages[0]??'',channel:c?.channels[0]??'',recipient:c?.recipients[0]??''}}
 const context = reactive(blankContext())
 const dirty = computed(()=>doc.value?.blocks.some(b=>edits[b.id] !== b.text) ?? false)
 const length = computed(()=>doc.value?.blocks.reduce((n,b)=>n+b.text.length,0) ?? 0)
@@ -38,7 +38,7 @@ async function upload(event:Event){const input=event.target as HTMLInputElement;
 function sample(){text.value=ui.value.sample}
 async function save(){if(!doc.value)return;await work('正在保存正文修订…',async()=>setDoc(await api<Document>('/documents/'+doc.value!.id,json('PATCH',{version:doc.value!.version,edits}))))}
 async function preview(){if(!doc.value)return;await work('正在生成脱敏预览…',async()=>{outbound.value=await api<Document>('/documents/'+doc.value!.id+'/outbound')})}
-async function run(){if(!doc.value)return;await work(mode.value==='demo'?'正在生成演示布局…':'正在请求模型并校验引用，可能需要数分钟…',async()=>{result.value=await api<Result>('/workflow',json('POST',{document_id:doc.value!.id,version:doc.value!.version,mode:mode.value,context,consent:consent.value,confirmed:confirmed.value,promises:workflowPromises.value}));message.value=result.value.report.message;restoredTools.value={promises:workflowResult.value?.promises};step.value=3;window.scrollTo({top:0})})}
+async function run(){if(!doc.value)return;await work(mode.value==='demo'?'正在生成演示布局…':'正在请求模型并校验引用，可能需要数分钟…',async()=>{result.value=await api<Result>('/workflow',json('POST',{document_id:doc.value!.id,version:doc.value!.version,mode:mode.value,context,consent:consent.value,confirmed:confirmed.value,promises:workflowPromises.value}));message.value=result.value.report.message;channel.value=context.channel||ui.value.channels[0];restoredTools.value={promises:workflowResult.value?.promises};step.value=3;window.scrollTo({top:0})})}
 async function locate(e:Evidence){highlighted.value=e.block_id;await nextTick();document.getElementById('source-'+e.block_id)?.scrollIntoView({behavior:'smooth',block:'center'})}
 async function copy(){try{await navigator.clipboard.writeText(message.value);toast.value='沟通草稿已复制';setTimeout(()=>toast.value='',2500)}catch{error.value='无法访问剪贴板，请选中草稿后手动复制。'}}
 function adjust(){if(!result.value)return;const [briefStart,briefEnd]=ui.value.draft_brief,[askStart,askEnd]=ui.value.draft_negotiate;message.value=style.value==='简短询问'?briefStart+result.value.report.questions.slice(0,3).join(' ')+briefEnd:style.value==='明确协商'?askStart+result.value.report.questions.join('\n')+askEnd:result.value.report.message}
@@ -73,6 +73,7 @@ onMounted(()=>work('正在连接本地服务…',async()=>{profile.value=await a
         <div class="form-row"><label>{{ui.context_labels.signed_date}}<input type="date" v-model="context.signed_date"></label><label>{{ui.context_labels.paid_date}}<input type="date" v-model="context.paid_date"></label></div>
         <label>{{ui.context_labels.services}}<textarea v-model="context.services" maxlength="2000" rows="3" :placeholder="ui.context_placeholders.services"></textarea></label>
         <label>{{ui.context_labels.preferences}}<textarea v-model="context.preferences" maxlength="2000" rows="2" :placeholder="ui.context_placeholders.preferences"></textarea></label>
+        <div class="form-row" v-if="profile.context.languages.length"><label>{{ui.context_labels.output_language}}<select v-model="context.output_language"><option v-for="l in profile.context.languages" :key="l">{{l}}</option></select></label><label>{{ui.context_labels.channel}}<select v-model="context.channel"><option v-for="c in profile.context.channels" :key="c">{{c}}</option></select></label><label>{{ui.context_labels.recipient}}<select v-model="context.recipient"><option v-for="r in profile.context.recipients" :key="r">{{r}}</option></select></label></div>
       </aside>
     </section>
 
@@ -86,12 +87,12 @@ onMounted(()=>work('正在连接本地服务…',async()=>{profile.value=await a
         <label class="check"><input type="checkbox" v-model="confirmed" :disabled="dirty"><span>我已核对正文与金额对应关系，了解上述覆盖范围。</span></label>
         <hr><label>{{ui.workflow_promise_label}}<textarea v-model="workflowPromises" rows="3" maxlength="6000" :placeholder="ui.workflow_promise_placeholder"></textarea></label><p class="muted">{{ui.task_plan}}</p><label>运行方式<select v-model="mode"><option value="demo">演示模式（无模型分析）</option><option value="live" :disabled="!health.model_configured||!profile.ready.analysis">真实模型分析{{!profile.ready.analysis?'（本地区尚未完成）':health.model_configured?'':'（未配置）'}}</option></select></label>
         <p v-if="mode==='demo'" class="notice">演示仅展示报告布局与引用跳转，不会判断你的合同风险。</p>
-        <template v-else><p class="muted">正文和背景将发送至后端配置的模型服务。系统会掩盖常见证件、账号、手机、邮箱和带标签姓名，但不能保证完全识别，请先手动清除其他敏感信息。</p><button @click="preview" :disabled="(!!busy||toolBusy)||dirty">预览脱敏正文</button><label class="check"><input type="checkbox" v-model="consent"><span>{{ui.consent}}</span></label></template>
+        <template v-else><p class="muted">正文和背景将发送至后端配置的模型服务。系统会掩盖常见证件、账号、手机、邮箱和带标签姓名，但不能保证完全识别，请先手动清除其他敏感信息。</p><button @click="preview" :disabled="(!!busy||toolBusy)||dirty">预览脱敏正文</button><p v-if="ui.outbound_warning" class="notice">{{ui.outbound_warning}}</p><label class="check"><input type="checkbox" v-model="consent"><span>{{ui.consent}}</span></label></template>
         <button class="primary full" @click="run" :disabled="(!!busy||toolBusy)||dirty||!confirmed||length>health.max_analysis_chars||(mode==='live'&&!consent)">{{mode==='demo'?'查看演示报告':'运行合同核验任务'}}</button>
         <p class="muted" v-if="dirty">请先保存修订，再确认分析范围。</p><p class="notice error" v-if="length>health.max_analysis_chars">正文超过分析上限，长合同分析尚未实现。</p>
         <details class="future"><summary>当前版本的能力边界</summary><p>{{ui.capabilities}}</p></details>
       </aside>
-      <div v-if="outbound" class="paper outbound"><div class="section-heading"><h2>将发送的脱敏正文</h2><button @click="outbound=null">收起</button></div><p class="muted">背景字段也会应用相同脱敏规则。发送前请检查上一页背景中是否仍有个人信息。</p><p v-for="b in outbound.blocks" :key="b.id" class="prewrap"><strong>{{b.location}}</strong><br>{{b.text}}</p></div>
+      <div v-if="outbound" class="paper outbound"><div class="section-heading"><h2>将发送的脱敏正文</h2><button @click="outbound=null">收起</button></div><p v-if="ui.outbound_warning" class="notice">{{ui.outbound_warning}}</p><p class="muted">背景字段也会应用相同脱敏规则。发送前请检查上一页背景中是否仍有个人信息。</p><p v-for="b in outbound.blocks" :key="b.id" class="prewrap"><strong>{{b.location}}</strong><br>{{b.text}}</p></div>
     </section>
 
     <section v-if="step===3&&result&&doc">

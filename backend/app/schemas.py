@@ -38,6 +38,10 @@ class Context(StrictModel):
     paid_date: str = Field(default='', max_length=20)
     services: str = Field(default='', max_length=2000)
     preferences: str = Field(default='', max_length=2000)
+    # Region-only choices (output language, draft channel and recipient); empty where the region has none.
+    output_language: str = Field(default='', max_length=20)
+    channel: str = Field(default='', max_length=20)
+    recipient: str = Field(default='', max_length=20)
 
     @model_validator(mode='after')
     def region_options(self):
@@ -46,7 +50,16 @@ class Context(StrictModel):
         self.goal = self.goal or options.goals[0]
         if self.role not in options.roles or self.goal not in options.goals:
             raise ValueError('身份或阅读目标不属于当前地区的选项。')
+        for name, allowed in (('output_language', options.languages), ('channel', options.channels), ('recipient', options.recipients)):
+            value = getattr(self, name) or (allowed[0] if allowed else '')
+            if value and value not in allowed:
+                raise ValueError('输出语言或沟通渠道不属于当前地区的选项。')
+            setattr(self, name, value)
         return self
+
+    def for_model(self):
+        # Fields a region does not use are left out, so the mainland payload is unchanged.
+        return self.model_dump(exclude={name for name in ('output_language', 'channel', 'recipient') if not getattr(self, name)})
 
 
 class AnalysisRequest(StrictModel):
