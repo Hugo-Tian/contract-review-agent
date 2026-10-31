@@ -6,6 +6,7 @@ import uuid
 import zipfile
 from defusedxml import ElementTree
 from .schemas import Block, Document
+from .profiles import current
 
 MAX_FILE = 10 * 1024 * 1024
 MAX_PAGES = 80
@@ -123,6 +124,8 @@ def parse_file(data: bytes, name: str, ocr_mode: str = 'auto') -> Document:
         raise ValueError('文件内容与类型不匹配，支持 PDF / DOCX / PNG / JPEG / WebP。')
     if not blocks:
         raise ValueError('没有可分析正文：未识别到文字，请上传更清晰的文件或手动粘贴文字。')
+    if any(b.source == 'ocr' for b in blocks) and current().messages.get('ocr_warning'):
+        warnings.append(current().messages['ocr_warning'])
     return Document(id=doc_id, name=name, kind=kind, blocks=blocks,
                     warnings=warnings, coverage=coverage, complete=complete)
 
