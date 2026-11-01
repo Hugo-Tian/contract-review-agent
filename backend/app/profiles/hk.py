@@ -47,6 +47,48 @@ evidence只能从提供的blocks.passages选择block_id与quote_id，不生成�
 不要推断说话人的身份、真实性或时间，不判断是否诈骗，也不要认定口头说法已经成为租约的一部分；只比较用户提供的文字与租约。
 explanation 和 question 用 output_language 书写（简体中文、繁體中文或 English）；status 保持规定的中文取值。'''
 
+# Selected provisions, read from the bilingual "Consolidated version for the Whole Chapter" PDFs exported from
+# Hong Kong e-Legislation (see scripts/build_hk_legal.py). Section numbers and headings were checked against
+# each chapter's own contents pages; the text is copied verbatim by app/hk_legal.py.
+LEGAL_SOURCES = [
+    {'id': 'cap7', 'file': 'Cap 7 Consolidated version', 'url': 'https://www.elegislation.gov.hk/hk/cap7',
+     'articles': ['119L', '119RA', '119V', '120AAP', '120AAR', '120AAZC', '120AAZF', '120AAZH', '120AAZL', '120AAZM', '120AAZN', '120AAZT'],
+     'schedules': {'7': ['2', '3', '4', '5', '6', '7', '8', '10', '11', '12']},
+     'scope': '第IVA部（第120AA条起）及附表7只适用于分间单位的“规管租赁”；第IV部条文的适用范围见该部第116条。是否适用于你的租约，须按实际情况判断。'},
+    {'id': 'cap511', 'file': 'Cap 511 Consolidated version', 'url': 'https://www.elegislation.gov.hk/hk/cap511',
+     'articles': ['36', '43', '45', '46', '47', '48', '49'],
+     'scope': '规管持牌地产代理；部分条文标注“部分生效”，以条文所附说明为准。'},
+    {'id': 'cap511C', 'file': 'Cap 511C Consolidated version', 'url': 'https://www.elegislation.gov.hk/hk/cap511C',
+     'articles': ['5', '6', '10', '13', '14'],
+     'scope': '地产代理就香港住宅物业的一般责任，例如订立地产代理协议、出租前的解释和土地查册、佣金。'},
+    {'id': 'cap117', 'file': 'Cap 117 Consolidated version', 'url': 'https://www.elegislation.gov.hk/hk/cap117',
+     'articles': ['4', '9', '15', '16', '17'],
+     'scope': '只收录与租约加盖印花相关的条文。附表1的印花税税率表是多栏表格，无法可靠地逐字提取，本库未收录；税额请以税务局资料核对。'},
+    {'id': 'cap71', 'file': 'Cap 71 Consolidated version', 'url': 'https://www.elegislation.gov.hk/hk/cap71',
+     'articles': [], 'schedules': {'1': ['1']},
+     # Untitled paragraph: show the schedule's own title as printed in the PDF.
+     'schedule_titles': {'1': ['第7、8、9 及12 條的適用範圍', 'Scope of Sections 7, 8, 9 and 12']},
+     'scope': '只收录附表1第1段：其中(b)项规定第7、8、9条不适用于合约中关于产生、移转或终止土地权益的部分。租约条款是否属此类须视情况而定，本工具不作判断，因此未把第7至9条作为租约条文收录。'},
+]
+
+LEGAL = {
+    'local_pdf': True, 'sources': LEGAL_SOURCES,
+    'aliases': {
+        '按金': ['按金', '租金按金', 'rental deposit', 'deposit'], '订金': ['按金', 'deposit'], '细订': ['按金', 'deposit'], '大订': ['按金', 'deposit'],
+        '临时租约': ['租約協議', '租賃協議', 'agreement for lease', 'tenancy agreement'], '临约': ['租約協議', '租賃協議', 'agreement for lease'],
+        '生约': ['首期租賃', '次期租賃', '終止', 'term'], '死约': ['首期租賃', '終止', 'term'], '提前退租': ['提前終止', '終止通知書', 'early termination'],
+        '退租': ['終止', '交回', 'termination', 'vacant possession'], '差饷': ['差餉', 'rates'], '地租': ['地租', 'Government rent'],
+        '管理费': ['管理費', 'management'], '水电': ['公用設施', '分攤', 'utilities', 'apportioned'], '印花税': ['印花稅', '加蓋印花', 'stamp duty', 'stamped'],
+        '印花': ['印花', 'stamp'], '佣金': ['佣金', 'commission'], '代理': ['地產代理', 'estate agent', 'licensee'], '维修': ['維修', '保養', '修葺', 'repair', 'maintenance'],
+        '分租': ['分租', '分間單位', 'underlet', 'sub-tenancy', 'subdivided unit'], '转租': ['轉讓', '分租', 'assign', 'underlet'], '二房东': ['分租', '上級租賃', 'sub-tenancy', 'superior tenancy'],
+        '收楼': ['重收', 'vacant possession', 're-entry'], '交吉': ['空置', '交回', 'vacant possession'], '查册': ['土地查冊', 'land search'],
+        '收据': ['收據', 'receipt'], '租金': ['租金', 'rent'], '加租': ['租金', '增加租金', 'increase'], '迫迁': ['侵擾', 'harassment'], '骚扰': ['侵擾', 'harassment'],
+        '免责': ['免責', 'exemption'], '业主进入': ['重收', 're-entry'], '租约': ['租約', '租賃', 'lease', 'tenancy'],
+    },
+    'to_traditional': str.maketrans('税饷约赁业务费维转让证书据条规处楼单间门发给还终内时经签订协议产损坏电气网册记录权应缴纳额计扣罚违', '稅餉約賃業務費維轉讓證書據條規處樓單間門發給還終內時經簽訂協議產損壞電氣網冊記錄權應繳納額計扣罰違'),
+    'note': '检索范围是5部香港条例（第7、511、511C、117、71章）中与住宅租赁相关的条文选编，不是完整法规库。条文取自用户从电子版香港法例下载的官方整章综合版本（经核证文本），中英文逐字保存；版本日期见每条。结果是原文参考，不自动判断你的租约适用哪条法律，也不构成法律意见。',
+}
+
 FACT_LABELS = ('出租人及身份', '承租人', '收款主体', '物业与范围', '租金与付款', '按金与退还', '租期与提前终止', '费用分担', '维修责任', '分租转租与交还单位')
 
 # Words that end with '.' but do not end a sentence in English tenancy text.
@@ -188,7 +230,7 @@ UI = {
     'task_plan': '任务计划：分析租约并核验引用 → 有业主或代理说法时逐条对照 → 检索法规参考 → 列出需你确认的下一步。',
     'consent': '我同意发送脱敏正文、所填背景和业主/代理说法，用于本次租约阅读与承诺对照。',
     'outbound_warning': '合约中的物业地址，以及没有字段标签的姓名，会原样发送给模型。如不希望发送，可回到左侧正文手动删改后保存新版本。',
-    'capabilities': '上方工具支持业主/代理承诺对照、按金与退租试算、签约前一次性支出、OCR、临约与正式租约比较、签约前核对清单和本机历史。香港法规库尚未建立。试算不等于最终退还金额。',
+    'capabilities': '上方工具支持业主/代理承诺对照、按金与退租试算、签约前一次性支出、OCR、临约与正式租约比较、签约前核对清单、香港法规选编检索和本机历史。试算不等于最终退还金额；法规条文不自动适用于你的租约。',
     'next_steps': '使用页面上方工具：把业主或代理说过的话与租约逐条对照，试算按金与退租，比较临时租约与正式租约，生成签约前核对清单。需要下次继续阅读，请手动保存到报告历史。',
     'channels': ['WhatsApp', '微信', '电邮'],
     'doc_word': '租约',
@@ -216,7 +258,8 @@ UI = {
                 'import_label': '导入聊天截图或资料', 'input_label': '业主或代理说过的话（每行一条，最多30条）', 'input_placeholder': '例如：家电坏了业主包修。请填写对方实际说过的话。',
                 'status_labels': {'合同有写': '租约有写', '说法不一致': '说法不一致', '合同没找到': '租约里没找到', '需要确认': '需要确认'},
                 'busy': '正在逐条对照业主或代理的说法并核对引用…', 'imported': '已提取资料，请核对OCR文字，并整理为每行一条说法后再对照。', 'default_source': '用户提供的业主或代理说法'},
-    'legal': {'default_query': '按金', 'placeholder': '按金、临约、提前退租、差饷、印花税', 'empty': '香港法规库尚未建立，暂时没有可检索条文。'},
+    'legal': {'default_query': '按金', 'placeholder': '按金、提前退租、印花税、维修、佣金、二房东', 'effective_label': '版本日期',
+              'empty': '这批条文选编里没有匹配的条文。可以换成“按金”“印花税”“维修”“佣金”等词，或打开电子版香港法例检索全部条例。'},
 }
 
 # Section-level citations, URLs, and conclusions on fraud, identity or legality of charges.
@@ -248,8 +291,8 @@ PROFILE = Profile(
              'retry': '请按schema返回全部说法且编号不重复。合同有写/说法不一致必须引用真实租约片段；合同没找到的evidence为空。不要输出条例编号、诈骗或合法性判断。',
              'note': '仅比较你提供的说法与本次正文。引用已核对，解释仍需确认；未核实业主或代理说法的真实性。',
              'consent_error': '请同意发送脱敏租约与业主/代理说法。'},
-    legal={'sources': [], 'aliases': {}, 'note': '香港法规库尚未建立（需要从香港电子版法例 eLegislation 获取官方条文）。目前没有可检索的条文。'},
-    workflow={'analysis_step': '租约分析与引用核验', 'goal_queries': {'退租与按金': '按金 提前退租'}, 'default_query': '租约',
+    legal=LEGAL,
+    workflow={'analysis_step': '租约分析与引用核验', 'goal_queries': {'退租与按金': '按金 提前退租', '临约与正式租约核对': '租约 印花税', '签约前检查': '租约 印花税 地产代理'}, 'default_query': '租约',
               'promise_step': '业主/代理承诺核验', 'promise_done': '已逐条对照租约；结果见业主 / 代理承诺对照工具。', 'promise_skipped': '未提供业主或代理说法，或当前为演示模式。',
               'final_step': '按金与下一步', 'final_detail': '如需试算，请在按金与退租试算中填写按金、欠租、扣减项及依据；系统不猜金额。可生成签约前核对清单。草稿由你检查后自行发送。'},
     messages={'scope_note': '这里只看了本次提取的文字。“没找到”不代表原文件里一定没有。引用已与原文核对，但解释仍可能有误，请结合完整租约确认。',

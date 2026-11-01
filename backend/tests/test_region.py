@@ -77,7 +77,7 @@ def test_hk_demo_and_validation_use_hk_fact_labels(client, monkeypatch):
 
 def test_region_only_tools_follow_profile(client, monkeypatch):
     monkeypatch.setenv('REGION', 'hk')
-    assert current().ready == {'analysis': True, 'promises': True, 'legal': False}
+    assert current().ready == {'analysis': True, 'promises': True, 'legal': True}
     upfront = {'first_rent': '12000', 'deposit': '24000', 'basis': '租约第2、3条', 'confirmed': True}
     assert client.post('/api/tools/upfront', json=upfront).status_code == 200
     monkeypatch.setenv('REGION', 'cn')
@@ -90,17 +90,14 @@ def test_region_only_tools_follow_profile(client, monkeypatch):
 
 
 
-def test_hk_legal_library_is_empty_not_mainland(client, monkeypatch, tmp_path):
+def test_hk_and_cn_legal_libraries_are_separate(client, monkeypatch):
     monkeypatch.setenv('REGION', 'hk')
-    monkeypatch.setattr(legal, 'HK_CORPUS', tmp_path / 'hk.json')
     forbid_network(monkeypatch)
-    result = client.get('/api/legal/search?q=退款').json()
-    assert result['results'] == [] and result['count'] == 0 and '香港法规库尚未建立' in result['note']
-    refreshed = client.post('/api/legal/refresh').json()
-    assert refreshed['count'] == 0 and refreshed['error']
-    assert not (tmp_path / 'hk.json').exists()
+    result = client.get('/api/legal/search?q=按金').json()
+    assert result['results'] and all(r['url'].startswith('https://www.elegislation.gov.hk/') for r in result['results'])
+    assert '5部香港条例' in result['note']
     monkeypatch.setenv('REGION', 'cn')
-    assert legal.search('退款')['results']
+    assert all('elegislation' not in r['url'] for r in legal.search('退款')['results'])
 
 
 def test_redaction_and_prompt_follow_region(monkeypatch):
