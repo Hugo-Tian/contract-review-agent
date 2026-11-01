@@ -124,3 +124,12 @@ def test_redaction_and_prompt_follow_region(monkeypatch):
     assert calls[0]['messages'][0]['content'] == cn.SYSTEM
     assert '"required_facts": ["签约主体"' in calls[0]['messages'][1]['content']
     assert analysis.redact('手机13812345678') == '手机[手机号已脱敏]'
+
+
+def test_region_copy_word_help_links_and_disclaimer():
+    from app.profiles import cn, hk
+    assert cn.UI['doc_word'] == '合同' and 'help_links' not in cn.UI
+    assert hk.UI['doc_word'] == '租约' and '不构成法律意见' in hk.UI['footer_note']
+    links = hk.UI['help_links']
+    assert {l['name'].split(' · ')[0] for l in links} >= {'差饷物业估价署', '地产代理监管局', '土地注册处', '消费者委员会', '司法机构', '当值律师服务'}
+    assert all(l['url'].startswith('https://') and l['scope'] for l in links)

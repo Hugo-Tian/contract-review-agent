@@ -190,7 +190,7 @@ async def report(body: AnalysisRequest):
     report_id = uuid.uuid4().hex
     response = {'mode': body.mode, 'document_id': doc.id, 'version': doc.version, 'report_id': report_id,
             'coverage': doc.coverage, 'warnings': doc.warnings,
-            'scope_note': '这里只看了本次提取的文字。“没找到”不代表原文件里一定没有。引用已与原文核对，但解释仍可能有误，请结合完整合同确认。',
+            'scope_note': current().messages['scope_note'],
             'evidence_status': '演示引用' if body.mode == 'demo' else '引用已核对原文，解释还请你确认',
             'report': result.model_dump(mode='json')}
     store.put_report(report_id, {'document': doc.model_dump(mode='json'), 'context': body.context.model_dump(), 'result': response})

@@ -50,7 +50,7 @@ async def run_contract_workflow(body, require_doc, report, promises):
         base = AnalysisRequest(**body.model_dump(exclude={'confirmed', 'promises'}))
         output = await report(base)
         require_doc(doc.id, doc.version)
-        trace.append({'name': '合同分析与引用核验', 'status': '完成', 'detail': '演示布局，不做风险判断。' if body.mode == 'demo' else '引用出处已校验；解释仍需人工复核。'})
+        trace.append({'name': labels['analysis_step'], 'status': '完成', 'detail': '演示布局，不做风险判断。' if body.mode == 'demo' else '引用出处已校验；解释仍需人工复核。'})
 
     async def promises_step():
         nonlocal doc, trace, output, promise_output, references
