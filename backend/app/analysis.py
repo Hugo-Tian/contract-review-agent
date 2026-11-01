@@ -4,7 +4,7 @@ import re
 import ssl
 import httpx
 from pydantic import ValidationError
-from .schemas import Document, Report, Evidence, Fact, Issue, Context, ModelReport, EvidenceReference
+from .schemas import Document, Report, Evidence, Fact, Issue, Context, ModelReport, EvidenceReference, report_models
 from .profiles import current, cn
 
 # Mainland prompt, kept under its old name for existing imports; analysis uses the active profile.
@@ -164,7 +164,7 @@ def evidence_catalog(doc: Document):
     return payload, catalog
 
 
-def resolve_references(result: ModelReport, catalog):
+def resolve_references(result: ModelReport, catalog, report_model=Report):
     data = result.model_dump()
     errors = []
     for group in ('facts', 'issues'):
@@ -179,24 +179,25 @@ def resolve_references(result: ModelReport, catalog):
             item['evidence'] = resolved
     if errors:
         raise ReportCheckError(errors)
-    return Report.model_validate(data)
+    return report_model.model_validate(data)
 
 
 async def analyze(doc: Document, context: Context):
     profile = current()
     if profile.system is None:
         raise ModelFailure(profile.messages['not_ready'])
+    region_report, region_model = report_models(profile.summary_max)
     masked = masked_document(doc)
     blocks, catalog = evidence_catalog(masked)
     payload = {'blocks': blocks,
                'coverage': doc.coverage, 'warnings': doc.warnings,
                'context': {k: redact(str(v)) for k, v in context.for_model().items()},
-               'required_facts': list(profile.fact_labels), 'schema': ModelReport.model_json_schema()}
+               'required_facts': list(profile.fact_labels), 'schema': region_model.model_json_schema()}
     body = {'model': os.environ['MODEL_NAME'], 'messages': [
         {'role': 'system', 'content': profile.system},
         {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]}
     if os.getenv('MODEL_RESPONSE_FORMAT', 'json_object') == 'json_schema':
-        body['response_format'] = {'type': 'json_schema', 'json_schema': {'name': 'contract_report', 'strict': True, 'schema': ModelReport.model_json_schema()}}
+        body['response_format'] = {'type': 'json_schema', 'json_schema': {'name': 'contract_report', 'strict': True, 'schema': region_model.model_json_schema()}}
     else:
         body['response_format'] = {'type': 'json_object'}
     if os.getenv('MODEL_THINKING') in ('enabled', 'disabled'):
@@ -225,7 +226,7 @@ async def analyze(doc: Document, context: Context):
                 if choice.get('finish_reason') != 'stop':
                     raise ValueError('模型输出未完整结束。')
                 content = choice['message']['content']
-                report = resolve_references(ModelReport.model_validate_json(content), catalog)
+                report = resolve_references(region_model.model_validate_json(content), catalog, region_report)
                 normalize_missing_references(report, masked)
                 validate_evidence(report, masked)
                 return report

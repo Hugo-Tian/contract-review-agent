@@ -17,7 +17,7 @@ SYSTEM = '''你是香港住宅租约的阅读与沟通助手。读者主要是�
 只做租约文字解读和可能后果。禁止输出条例编号或条文号（例如 Cap.、第X章、section、s. 加编号）、案例、URL、确定的法律效力或能否强制执行的结论、退款保证。
 不做诈骗判断，不判断业主、代理或二房东身份的真伪，不判断按金扣减或任何收费是否合法。遇到收款人与出租人不一致、看不到业主同意分租的文件等情况，只如实写出租约文字里看到了什么、缺了什么，并建议用户自行核实（例如到土地注册处查册、要求出示业主同意分租的书面文件）；不得写“这是骗局”“业主是假的”之类的结论。
 事实必须附真实 evidence。每个 evidence 只含 block_id 和 quote_id，从所给 blocks.passages 选择，不要输出quote或location，不要自行生成编号。后端会填入该编号对应的逐字原文和位置。原文可能是英文或繁体中文，引用保持原文，不翻译、不改写。
-summary 不超过150个字符（中文约150字，英文约25个词）。facts 必须恰好覆盖 required_facts 指定的10项，label 逐字使用给定名称。未发现的事实 value 写“未发现明确约定”（无论输出语言，这七个字保持不变），evidence 为空。
+summary：中文不超过150字；English 不超过60个词，且不超过360个字符。facts 必须恰好覆盖 required_facts 指定的10项，label 逐字使用给定名称。未发现的事实 value 写“未发现明确约定”（无论输出语言，这七个字保持不变），evidence 为空。
 每项风险有理由、原文、解释、影响、问题、待双方协商的修改方向。无问题不凑数量。
 只有看完全部传入块才可说在当前覆盖范围内未发现，不能把未覆盖内容说成缺失。信息缺失 evidence 为空；条款冲突至少引用两个文本位置或同一块的两个不同片段。临时租约与正式租约都提供时，两者不一致按条款冲突处理，分别引用两份文字。
 不得默认付了订金就等于签了正式租约、入住就等于接受单位现状、口头说法已经写进租约。分清订金、按金、租金和中介佣金，不把其中一种当成另一种。
@@ -132,6 +132,10 @@ def redact(text: str) -> str:
     text = re.sub(rf'(\b{NAME_LABEL_EN}\s*[:：]\s*)({EN_NAME})', lambda m: _mask_name(m.group(1), m.group(2)), text)
     text = re.sub(r'((?:業主姓名|业主姓名|租客姓名|收款人姓名|收款人|聯絡人|聯繫人|姓名|名稱)\s*[:：]\s*)([一-鿿·]{2,6})',
                   lambda m: _mask_name(m.group(1), m.group(2)), text)
+    # Party labels ("出租人（二房東）：何虛構") are masked only when the value is a short name that ends the
+    # line or meets punctuation, so clause text such as "承租人：須於每月1日交租" is left alone.
+    text = re.sub(r'((?:出租人|承租人|業主|业主|租客|代理人?|二房東|二房东)(?:[（(][^）)\n]{1,6}[）)])?\s*[:：]\s*)'
+                  r'([一-鿿·]{2,6})(?=$|[\s（(，,。；;、）)])', lambda m: _mask_name(m.group(1), m.group(2)), text, flags=re.M)
     return cn.redact(text)
 
 
@@ -143,7 +147,8 @@ CHECKLIST = [
     {'fact': '收款主体', 'related': ['出租人及身份'],
      'found': ('付款前核对收款人', '租约写明的收款安排和出租人见下方原文。如果收款人不是租约写明的出租人，可以先要求对方书面说明收款安排再付款。本工具不判断对方身份或是否可信。'),
      'missing': ('问清租金和按金付给谁', '本次正文里没找到收款人或收款方式。付款前可要求把收款人和收款方式写进租约。')},
-    {'keyword': r'sub-?let|sub-?lease|sub-?landlord|underlet|二房東|二房东|分租|轉租|转租|分間|分间',
+    # Only a sub-landlord arrangement, not a clause that forbids subletting ("shall not ... sublet").
+    {'keyword': r'sub-?landlord|principal tenant|head (?:lease|tenancy)|二房東|二房东|分租協議|分租协议|主租約|主租约',
      'found': ('要求出示业主同意分租的书面文件', '租约原文提到分租、转租或二房东（见下方原文）。如果出租人本身也是租客，可以要求查看业主同意分租的书面文件。本工具不判断是否已取得同意。')},
     {'keyword': r'inventory|schedule|condition|photo|清單|清单|附件|附表|照片|家具|家電|家电',
      'found': ('入住时按清单逐项核对并拍照', '租约提到清单、附件或单位状况（见下方原文）。入住当天逐项核对、拍照，并请对方签认，退租时可以对照。'),
@@ -256,4 +261,5 @@ PROFILE = Profile(
               'not_ready': '香港版的这一功能尚未完成，暂不能调用模型；请先使用演示模式。'},
     ui=UI,
     tools=TOOLS,
+    summary_max=360,
 )

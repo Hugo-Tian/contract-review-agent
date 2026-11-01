@@ -35,6 +35,8 @@ class Profile:
     ui: dict = field(default_factory=dict)
     # Region-only tools (e.g. HK deposit calculator, checklist rules); absent tools are refused.
     tools: dict = field(default_factory=dict)
+    # Report summary length; English needs more characters than Chinese for the same content.
+    summary_max: int = 150
 
     @property
     def ready(self):

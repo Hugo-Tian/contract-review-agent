@@ -222,3 +222,10 @@ def test_checklist_requires_live_report_for_same_version(client):
     other = document(LEASE)
     report_id = live_snapshot(other, {})
     assert client.post('/api/tools/checklist', json={'document_id': doc['id'], 'version': 1, 'report_id': report_id}).status_code == 409
+
+
+def test_checklist_ignores_clauses_that_forbid_subletting(client):
+    doc = document('Landlord: Harbour Example Ltd. 8. The Tenant shall not assign, sublet or part with possession of the Premises.')
+    report_id = live_snapshot(doc, {})
+    items = [i['title'] for i in client.post('/api/tools/checklist', json={'document_id': doc.id, 'version': 1, 'report_id': report_id}).json()['items']]
+    assert '要求出示业主同意分租的书面文件' not in items

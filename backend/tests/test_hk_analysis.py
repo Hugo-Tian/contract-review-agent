@@ -198,3 +198,27 @@ def test_hk_prompt_keeps_reliability_rules():
     for rule in ('不可信数据', 'block_id 和 quote_id', '不要输出quote或location', '确定的法律效力', '无问题不凑数量', '当前覆盖范围内未发现',
                  '不做诈骗判断', '不判断按金扣减或任何收费是否合法', '土地注册处查册', 'context.output_language', '未发现明确约定', '差饷', '交吉', '细订'):
         assert rule in hk.SYSTEM, rule
+
+
+def test_hk_allows_longer_english_summary_but_cn_keeps_150(monkeypatch):
+    summary = 'Check three things before signing: the fixed-term penalty takes the deposit and the remaining rent, ' \
+              'the rent goes to a person other than the landlord, and rates and management fees have no payer.'
+    assert 150 < len(summary) <= 360
+    mock_model(monkeypatch, [model_report(summary=summary)])
+    report = asyncio.run(analysis.analyze(document(ENGLISH), Context(output_language='English')))
+    assert report.summary == summary
+    monkeypatch.setenv('REGION', 'cn')
+    from app.schemas import Report as BaseReport, report_models
+    assert report_models(150)[0] is BaseReport
+    with pytest.raises(ValidationError):
+        BaseReport.model_validate({**model_report(summary='长' * 151), 'facts': []})
+
+
+@pytest.mark.parametrize('source,secret', [('出租人（二房東）：何虛構', '何虛構'), ('承租人：李示例同學', '李示例同學'), ('業主：陳大文，身份證另附', '陳大文')])
+def test_hk_masks_names_after_party_labels(source, secret):
+    assert secret not in hk.redact(source) and '[姓名·' in hk.redact(source)
+
+
+@pytest.mark.parametrize('text', ['承租人：須於每月1日交租。', '承租人：本人同意遵守本協議。', '出租人：Harbour Example Holdings Limited'])
+def test_hk_party_labels_keep_clause_text(text):
+    assert hk.redact(text) == text

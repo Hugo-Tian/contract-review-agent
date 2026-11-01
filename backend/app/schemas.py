@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 from .profiles import current, cn
 
 
@@ -123,6 +123,20 @@ class ModelIssue(Issue):
 class ModelReport(Report):
     facts: list[ModelFact]
     issues: list[ModelIssue]
+
+
+def report_models(summary_max: int = 150):
+    """(Report, ModelReport) for a region's summary limit; 150 returns the original classes unchanged."""
+    if summary_max == 150:
+        return Report, ModelReport
+    if summary_max not in _REPORT_MODELS:
+        limit = Field(max_length=summary_max)
+        _REPORT_MODELS[summary_max] = (create_model('Report', __base__=Report, summary=(str, limit)),
+                                       create_model('ModelReport', __base__=ModelReport, summary=(str, limit)))
+    return _REPORT_MODELS[summary_max]
+
+
+_REPORT_MODELS = {}
 
 
 class TextInput(StrictModel):
