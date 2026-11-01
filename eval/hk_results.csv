@@ -1,0 +1,12 @@
+case_id,model,date,quote_accuracy,missed_expected_points,unsupported_claims,forbidden_claims,latency_seconds,cost,notes
+hk-early-termination,,,,,,,,,not_run
+hk-deposit-no-date,,,,,,,,,not_run
+hk-repairs-all-tenant,,,,,,,,,not_run
+hk-outgoings-unclear,,,,,,,,,not_run
+hk-payee-differs,,,,,,,,,not_run
+hk-sublet-no-consent,,,,,,,,,not_run
+hk-oral-promise,,,,,,,,,not_run
+hk-temporary-vs-formal,,,,,,,,,not_run
+hk-injection,,,,,,,,,not_run
+hk-output-language,,,,,,,,,not_run
+hk-ocr-dropped-negation,,,,,,,,,not_run
