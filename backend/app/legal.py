@@ -136,7 +136,9 @@ def refresh_local(profile):
 def hk_row(source, chapter, effective, retrieved, filename, r):
     if r['schedule'] and not r['heading_zh']:
         r = {**r, 'heading_zh': source['schedule_titles'][r['schedule']][0], 'heading_en': source['schedule_titles'][r['schedule']][1]}
-    if r['schedule']:
+    if r.get('article_zh'):
+        key, article, article_en = r['number'], r['article_zh'], r['article_en']
+    elif r['schedule']:
         key, article, article_en = f"S{r['schedule']}-{r['number']}", f"附表{r['schedule']}第{r['number']}條", f"Schedule {r['schedule']}, section {r['number']}"
     else:
         key, article, article_en = r['number'], f"第{r['number']}條", f"s. {r['number']}"

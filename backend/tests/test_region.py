@@ -130,3 +130,11 @@ def test_region_copy_word_help_links_and_disclaimer():
     links = hk.UI['help_links']
     assert {l['name'].split(' · ')[0] for l in links} >= {'差饷物业估价署', '地产代理监管局', '土地注册处', '消费者委员会', '司法机构', '当值律师服务'}
     assert all(l['url'].startswith('https://') and l['scope'] for l in links)
+
+
+def test_same_origin_on_any_local_port_but_not_others(client):
+    ok = client.get('/api/profile', headers={'host': '127.0.0.1:8123', 'origin': 'http://127.0.0.1:8123'})
+    assert ok.status_code == 200
+    assert client.get('/api/profile', headers={'host': '127.0.0.1:8123', 'origin': 'http://127.0.0.1:9999'}).status_code == 403
+    assert client.get('/api/profile', headers={'host': '127.0.0.1:8123', 'origin': 'https://evil.example'}).status_code == 403
+    assert client.get('/api/profile', headers={'host': 'evil.example:8123', 'origin': 'http://evil.example:8123'}).status_code in (400, 403)

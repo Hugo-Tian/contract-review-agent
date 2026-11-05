@@ -1,5 +1,6 @@
 import json
 import os
+from contextvars import ContextVar
 import re
 import ssl
 import httpx
@@ -9,6 +10,23 @@ from .profiles import current, cn
 
 # Mainland prompt, kept under its old name for existing imports; analysis uses the active profile.
 SYSTEM = cn.SYSTEM
+
+
+# Token counts reported by the model service, summed over every call (and retry) in one request.
+usage_meter: ContextVar[dict | None] = ContextVar('usage_meter', default=None)
+
+
+def count_usage(response):
+    meter = usage_meter.get()
+    try:
+        usage = response.json().get('usage') or {}
+    except (ValueError, AttributeError):
+        return
+    if meter is not None:
+        meter['calls'] = meter.get('calls', 0) + 1
+        for key, value in usage.items():
+            if isinstance(value, int):
+                meter[key] = meter.get(key, 0) + value
 
 
 def configured():
@@ -105,6 +123,23 @@ def validate_evidence(report: Report, doc: Document):
     return report
 
 
+def mostly_chinese(text):
+    """True when Chinese characters outweigh English letters, allowing for quoted Chinese terms."""
+    return len(re.findall(r'[\u4e00-\u9fff]', text)) > 0.2 * len(re.findall(r'[A-Za-z]', text))
+
+
+def check_output_language(report: Report, context: Context):
+    """English was requested: the model-written fields must be English. Quotes are backfilled, never checked."""
+    if context.output_language != 'English':
+        return
+    written = ' '.join([report.summary, report.message, *report.questions, *report.amendments,
+                        *(f.value for f in report.facts if f.value != '未发现明确约定'),
+                        *(i.title + ' ' + i.explanation + ' ' + i.impact + ' ' + i.question + ' ' + i.negotiation for i in report.issues)])
+    if mostly_chinese(written):
+        raise ReportCheckError(['output_language：要求用 English 书写 summary、facts.value、issues、questions、amendments 和 message，但输出主要是中文。'
+                                '只改写这些字段的语言；固定取值和“未发现明确约定”保持中文，原文引用由后端回填。'])
+
+
 def normalize_missing_references(report: Report, doc: Document):
     """Related text cannot prove absence. Verify it first, then omit that citation.
 
@@ -193,6 +228,8 @@ async def analyze(doc: Document, context: Context):
                'coverage': doc.coverage, 'warnings': doc.warnings,
                'context': {k: redact(str(v)) for k, v in context.for_model().items()},
                'required_facts': list(profile.fact_labels), 'schema': region_model.model_json_schema()}
+    if context.output_language:
+        payload['output_language'] = context.output_language  # also inside context; repeated here so it is not missed
     body = {'model': os.environ['MODEL_NAME'], 'messages': [
         {'role': 'system', 'content': profile.system},
         {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]}
@@ -222,6 +259,7 @@ async def analyze(doc: Document, context: Context):
             if response.status_code != 200:
                 raise ModelFailure(f'模型服务返回 HTTP {response.status_code}，请检查接口、模型和 JSON 格式支持。')
             try:
+                count_usage(response)
                 choice = response.json()['choices'][0]
                 if choice.get('finish_reason') != 'stop':
                     raise ValueError('模型输出未完整结束。')
@@ -229,6 +267,7 @@ async def analyze(doc: Document, context: Context):
                 report = resolve_references(region_model.model_validate_json(content), catalog, region_report)
                 normalize_missing_references(report, masked)
                 validate_evidence(report, masked)
+                check_output_language(report, context)
                 return report
             except (ValueError, KeyError, TypeError, IndexError) as exc:
                 if isinstance(exc, ValidationError):

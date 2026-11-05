@@ -171,6 +171,49 @@ def schedule_paragraphs(blocks, title):
     return found
 
 
+ROW = re.compile(r'^\((?:[a-z]|i|ii|iii|iv|v|vi)\)')
+
+
+def table_head(doc, start, stop, split, after=None):
+    """Verbatim rows of one head of a two-column schedule table, e.g. Cap. 117 First Schedule head 1(2).
+
+    `split` is the x position dividing "nature of instrument" from "stamp duty / time / persons liable"
+    on this language's half of the spread. Each row starts at a left-column item such as "(a)" or "(iii)";
+    right-column cells are attached to the row they sit beside. The column headers repeated on every page
+    are dropped; the text of every cell is kept as printed.
+    """
+    rows, current, started, begun = [], None, False, after is None
+    for page in doc:
+        text = page.get_text()
+        if not begun:
+            begun = after in text
+            if not begun:
+                continue
+        mid = page.rect.width / 2
+        left_half = split < mid
+        blocks = [b for b in page.get_text('blocks') if TOP + 52 <= b[1] <= BOTTOM and (b[0] < mid - 5) == left_half]
+        for b in sorted(blocks, key=lambda b: (round(b[1]), b[0])):
+            lines = [l.strip() for l in b[4].split('\n') if l.strip()]
+            if not lines:
+                continue
+            flat = join(lines)
+            if not started:
+                started = flat == start
+                continue
+            if flat.startswith(stop):
+                return [join(r['nature']) + (' —— ' + join(r['duty']) if r['duty'] else '') for r in rows]
+            if b[0] < split:
+                # Each item, and the cross-reference line after the last one, starts a new row.
+                if ROW.match(flat) or flat.startswith(('另見', 'And see')) or current is None:
+                    current = {'nature': [flat], 'duty': []}
+                    rows.append(current)
+                else:
+                    current['nature'].append(flat)
+            elif current is not None:
+                current['duty'].append(flat)
+    raise ValueError(f'未找到表格段落 {start!r} 的结尾 {stop!r}。')
+
+
 def extract(path: Path, source):
     """(version date, {'zh', 'en'} chapter title, rows) for one chapter; raises if any requested provision is missing.
 
@@ -199,6 +242,12 @@ def extract(path: Path, source):
                 raise ValueError(f'{source["id"]} 附表{schedule} 第 {number} 段未能同时取得中英文本。')
             (heading_zh, text_zh), (heading_en, text_en) = zh_paras[number], en_paras[number]
             rows.append(checked(source, number, schedule, heading_zh, heading_en, text_zh, text_en))
+    for table in source.get('tables', []):
+        with pymupdf.open(path) as doc:
+            text_zh = '\n'.join([table['columns'][0]] + table_head(doc, *table['zh']))
+            text_en = '\n'.join([table['columns'][1]] + table_head(doc, *table['en']))
+        row = checked(source, table['key'], None, table['heading'][0], table['heading'][1], text_zh, text_en)
+        rows.append({**row, 'article_zh': table['article'][0], 'article_en': table['article'][1]})
     return effective, chapter, rows
 
 

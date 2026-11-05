@@ -5,7 +5,7 @@ import re
 from decimal import Decimal, ROUND_HALF_UP
 from difflib import SequenceMatcher
 import httpx
-from .analysis import masked_document, evidence_catalog, redact, ModelFailure
+from .analysis import masked_document, evidence_catalog, redact, ModelFailure, count_usage, mostly_chinese
 from .tool_schemas import PromiseResult
 from .profiles import current
 
@@ -35,6 +35,7 @@ async def compare_promises(doc, request):
                 raise ModelFailure(profile['connect_error']) from None
             content = None
             try:
+                count_usage(response)
                 choice = response.json()['choices'][0]
                 if choice.get('finish_reason') != 'stop':
                     raise ValueError('输出不完整')
@@ -44,6 +45,8 @@ async def compare_promises(doc, request):
                     raise ValueError('承诺条目遗漏或重复')
                 rows = []
                 for item in sorted(result.items, key=lambda x: x.promise_id):
+                    if request.output_language == 'English' and mostly_chinese(item.explanation + ' ' + item.question):
+                        raise ValueError('explanation 和 question 要用 English 书写')
                     if profile['forbidden'].search(item.explanation + item.question):
                         raise ValueError('解释含未经核验的外部法律内容')
                     if item.status in ('合同有写', '说法不一致') and not item.evidence:

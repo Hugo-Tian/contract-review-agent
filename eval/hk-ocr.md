@@ -52,3 +52,24 @@
 
 - RapidOCR 模型列表：https://rapidai.github.io/RapidOCRDocs/latest/model_list/
 - PP-OCR ONNX 模型（社区转换）：https://huggingface.co/monkt/paddleocr-onnx
+
+## 2026-11-05 替代模型试验（独立环境，未引入项目）
+
+在 `work/ocr-trial/venv`（不提交）中安装 `rapidocr` 3.4.2，模型从 RapidAI 的 ModelScope 仓库下载，对同两份扫描件测试。检测模型都使用默认的 `ch_PP-OCRv4_det`。
+
+| 识别模型 | 繁体分租 CER | 繁体关键词（共 12 个） | 英文租约 CER | `HK$` | 模型大小 | 繁体每页耗时 |
+|---|---|---|---|---|---|---|
+| 现用：rapidocr_onnxruntime 1.2.3 默认 | 约 17.9% | 6 | 6.6% | 错（`HKs`） | 已随包安装 | — |
+| PP-OCRv4 `chinese_cht` mobile | 13.6% | 10（漏“二房東”“港幣13,000元”） | 14.3% | 错 | 10.6 MB | 13.7 秒 |
+| PP-OCRv5 `ch` mobile | 11.4% | 10（漏“兩個月”“隨時進入”） | 21.9% | 对 | 15.9 MB | 18.9 秒 |
+| **PP-OCRv5 `ch` server** | **0%** | **12** | 12.2% | **对** | **80.7 MB** | 13.6 秒 |
+
+结论：
+
+- PP-OCRv5 server 模型在这份繁体扫描件上识别完全正确，现用引擎漏掉的“港幣”“不予退還”“為”“遷出”都能识别。
+- 英文扫描件上，它的 CER 比现用引擎高，但关键词全部正确，包括 `HK$`。
+- 代价：
+  - 要把 `rapidocr_onnxruntime` 1.2.3 换成 `rapidocr` 3.x；
+  - 首次使用要下载约 80 MB 模型（也可以随安装包附带）；
+  - CPU 上每页约 14–17 秒。
+- 这只是 2 份虚构扫描件上的结果。是否替换需要你决定；替换后还要在更多真实质量的扫描件上复测，并核对模型许可证和文件校验值。

@@ -26,9 +26,9 @@ def corpus():
 
 def test_corpus_has_every_selected_provision_with_source_metadata():
     data = corpus()
-    expected = sum(len(s['articles']) + sum(len(v) for v in s.get('schedules', {}).values()) for s in hk.LEGAL_SOURCES)
+    expected = sum(len(s['articles']) + sum(len(v) for v in s.get('schedules', {}).values()) + len(s.get('tables', [])) for s in hk.LEGAL_SOURCES)
     rows = data['articles']
-    assert len(rows) == expected == 40 and len({r['id'] for r in rows}) == 40
+    assert len(rows) == expected == 45 and len({r['id'] for r in rows}) == 45
     for r in rows:
         source = r['id'].split(':')[0]
         assert r['url'] == f'https://www.elegislation.gov.hk/hk/{source}'
@@ -50,6 +50,18 @@ def test_key_provisions_are_verbatim_in_both_languages():
     assert rows['cap71:S1-1']['heading_en'] == 'Scope of Sections 7, 8, 9 and 12'
     assert 'creation or transfer of an interest in land' in rows['cap71:S1-1']['text_en']
     assert 'Disputes as regards Commission' not in rows['cap511:48']['text_en']   # cross-heading not swallowed
+    scope = rows['cap7:120AAB']
+    assert '(c) 其標的處所屬分間單位；' in scope['text'] and '(d) the tenant of which is a natural person; and' in scope['text_en']
+
+
+def test_lease_stamp_duty_rows_keep_their_columns():
+    table = {r['id']: r for r in corpus()['articles']}['cap117:S1-H1-2']
+    assert table['article'] == '附表1第1類(2)' and table['heading_en'] == 'Lease'
+    zh, en = table['text'].split('\n'), table['text_en'].split('\n')
+    assert zh[0].startswith('文書性質') and en[0].startswith('Nature of Instrument') and len(zh) == len(en) == 9
+    assert '(ii) 而租約指明的租期不超逾1 年； —— (ii) 租期內須繳租金總額的每$100 須繳付25 仙' in table['text']
+    assert en[5].startswith('(iii) where the term specified in the lease exceeds one year but does not exceed three years; —— (iii) 50 cents')
+    assert zh[-1].startswith('另見第2') and en[-1].startswith('And see sections')
 
 
 @pytest.mark.parametrize('query,first', [('按金', 'cap7:120AAZC'), ('提前退租', 'cap7:120AAZH'), ('印花税', 'cap117:4'), ('deposit', 'cap7:120AAZC')])
@@ -77,7 +89,7 @@ def test_refresh_without_source_folder_keeps_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(legal, 'HK_CORPUS', target)
     monkeypatch.delenv('HK_LEGAL_SOURCE_DIR', raising=False)
     result = asyncio.run(legal.refresh())
-    assert result['count'] == 40 and all('保留已有缓存' in s['error'] for s in result['sources'])
+    assert result['count'] == 45 and all('保留已有缓存' in s['error'] for s in result['sources'])
     assert target.read_bytes() == before
 
 
@@ -107,7 +119,7 @@ def test_refresh_with_one_broken_pdf_keeps_that_chapter_from_cache(monkeypatch, 
     result = asyncio.run(legal.refresh())
     status = {s['id']: s for s in result['sources']}
     assert status['cap71']['error'] is None and status['cap71']['count'] == 1
-    assert '无法读取' in status['cap7']['error'] and status['cap7']['count'] == 22
+    assert '无法读取' in status['cap7']['error'] and status['cap7']['count'] == 26
     assert '找不到' in status['cap511']['error'] or '未在' in status['cap511']['error']
-    assert result['count'] == 40
-    assert len(json.loads(target.read_text(encoding='utf-8'))['articles']) == 40
+    assert result['count'] == 45
+    assert len(json.loads(target.read_text(encoding='utf-8'))['articles']) == 45

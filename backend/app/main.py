@@ -1,4 +1,5 @@
 import asyncio
+import re
 from contextlib import asynccontextmanager
 import json
 import os
@@ -17,7 +18,7 @@ from .tool_schemas import PromiseRequest, RefundRequest, CompareRequest, SaveReq
 from . import history, legal, contract_tools
 from . import store
 from .jiuwen_workflow import SDK_VERSION, run_contract_workflow
-from .analysis import configured, demo_report, analyze, ModelFailure, masked_document
+from .analysis import configured, demo_report, analyze, ModelFailure, masked_document, usage_meter
 from .parsing import MAX_FILE
 from .profiles import current
 
@@ -46,7 +47,10 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost
 @app.middleware('http')
 async def local_only(request: Request, call_next):
     origin = request.headers.get('origin')
-    if origin and origin not in {'http://127.0.0.1:8000', 'http://localhost:8000', 'http://127.0.0.1:5173', 'http://localhost:5173'}:
+    host = request.headers.get('host', '')
+    # The page served by this process (any local port) and the Vite dev server may call the API.
+    same_origin = re.fullmatch(r'(?:127\.0\.0\.1|localhost)(?::\d+)?', host) and origin == f'http://{host}'
+    if origin and not same_origin and origin not in {'http://127.0.0.1:8000', 'http://localhost:8000', 'http://127.0.0.1:5173', 'http://localhost:5173'}:
         return JSONResponse({'detail': '仅允许本地工作台访问。'}, status_code=403)
     response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store'
@@ -181,10 +185,14 @@ async def report(body: AnalysisRequest):
         if analysis_lock.locked():
             raise HTTPException(409, '已有分析正在处理，请稍后重试。')
         async with analysis_lock:
+            usage, token = {}, usage_meter.set({})
             try:
                 result = await analyze(doc, body.context)
             except ModelFailure as exc:
                 raise HTTPException(502, str(exc)) from None
+            finally:
+                usage = usage_meter.get()
+                usage_meter.reset(token)
     else:
         result = demo_report(doc)
     report_id = uuid.uuid4().hex
@@ -193,6 +201,8 @@ async def report(body: AnalysisRequest):
             'scope_note': current().messages['scope_note'],
             'evidence_status': '演示引用' if body.mode == 'demo' else '引用已核对原文，解释还请你确认',
             'report': result.model_dump(mode='json')}
+    if body.mode == 'live' and usage:
+        response['usage'] = usage
     store.put_report(report_id, {'document': doc.model_dump(mode='json'), 'context': body.context.model_dump(), 'result': response})
     return response
 
@@ -217,10 +227,16 @@ async def promises(body: PromiseRequest):
     if analysis_lock.locked():
         raise HTTPException(409, '已有分析正在处理，请稍后重试。')
     async with analysis_lock:
+        token = usage_meter.set({})
         try:
             result = await contract_tools.compare_promises(doc, body)
         except ModelFailure as exc:
             raise HTTPException(502, str(exc)) from None
+        finally:
+            usage = usage_meter.get()
+            usage_meter.reset(token)
+        if usage:
+            result = {**result, 'usage': usage}
     store.put_tool(doc.id, doc.version, 'promises', result)
     return result
 

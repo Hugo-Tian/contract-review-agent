@@ -222,3 +222,62 @@ def test_hk_masks_names_after_party_labels(source, secret):
 @pytest.mark.parametrize('text', ['承租人：須於每月1日交租。', '承租人：本人同意遵守本協議。', '出租人：Harbour Example Holdings Limited'])
 def test_hk_party_labels_keep_clause_text(text):
     assert hk.redact(text) == text
+
+
+def test_live_report_records_token_usage_and_demo_does_not(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    class Response:
+        status_code = 200
+        def json(self):
+            return {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(model_report(), ensure_ascii=False)}}],
+                    'usage': {'prompt_tokens': 1200, 'completion_tokens': 300, 'total_tokens': 1500}}
+
+    class MockClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, url, **kwargs): return Response()
+
+    monkeypatch.setattr(analysis.httpx, 'AsyncClient', MockClient)
+    monkeypatch.setenv('MODEL_API_KEY', 'test'); monkeypatch.setenv('MODEL_NAME', 'test')
+    with TestClient(app) as client:
+        doc = client.post('/api/documents/text', json={'text': ENGLISH}).json()
+        live = client.post('/api/analyze', json={'document_id': doc['id'], 'version': 1, 'mode': 'live', 'consent': True}).json()
+        assert live['usage'] == {'calls': 1, 'prompt_tokens': 1200, 'completion_tokens': 300, 'total_tokens': 1500}
+        demo = client.post('/api/analyze', json={'document_id': doc['id'], 'version': 1, 'mode': 'demo'}).json()
+        assert 'usage' not in demo
+
+
+def chinese_report():
+    return model_report(summary='请先核对租期和维修责任。', questions=['租期多长？', '维修谁负责？', '按金几时退？'], message='你好，想确认几件事，谢谢。')
+
+
+def test_english_requested_but_chinese_returned_is_retried(monkeypatch):
+    calls = mock_model(monkeypatch, [chinese_report(), model_report()])
+    report = asyncio.run(analysis.analyze(document(ENGLISH), Context(output_language='English')))
+    assert report.summary == 'Check the fixed term and repairs.' and len(calls) == 2
+    assert 'output_language' in calls[1]['messages'][-1]['content']
+    assert json.loads(calls[0]['messages'][1]['content'])['output_language'] == 'English'
+
+
+def test_english_requested_and_still_chinese_fails(monkeypatch):
+    mock_model(monkeypatch, [chinese_report()])
+    with pytest.raises(analysis.ModelFailure, match='output_language'):
+        asyncio.run(analysis.analyze(document(ENGLISH), Context(output_language='English')))
+
+
+def test_chinese_output_is_accepted_when_chinese_requested(monkeypatch):
+    mock_model(monkeypatch, [chinese_report()])
+    report = asyncio.run(analysis.analyze(document(ENGLISH), Context(output_language='繁體中文')))
+    assert report.summary == '请先核对租期和维修责任。'
+
+
+def test_pseudonyms_survive_a_restart(tmp_path, monkeypatch):
+    first = hk.redact('Payee: Mr. Lee Ka Fai')
+    monkeypatch.setattr(hk, '_KEY', None)          # a new process reads the same key file
+    assert hk.redact('Payee: Mr. Lee Ka Fai') == first and (tmp_path / 'pseudonym.key').exists()
+    monkeypatch.setenv('PSEUDONYM_KEY_FILE', str(tmp_path / 'other.key'))
+    monkeypatch.setattr(hk, '_KEY', None)
+    assert hk.redact('Payee: Mr. Lee Ka Fai') != first   # a different installation cannot link them
