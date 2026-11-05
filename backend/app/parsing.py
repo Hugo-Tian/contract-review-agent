@@ -48,10 +48,13 @@ def parse_file(data: bytes, name: str, ocr_mode: str = 'auto') -> Document:
                     continue
                 source = 'file'
                 if ocr_mode == 'force' or (ocr_mode == 'auto' and len(text) < 30):
-                    if ocr_pages >= 20:
-                        raise ValueError('一次最多 OCR 20 页，请拆分扫描件。')
+                    if ocr_pages >= current().ocr_max_pages:
+                        raise ValueError(f'一次最多 OCR {current().ocr_max_pages} 页，请拆分扫描件。')
                     from .ocr import recognize
-                    scale = min(2, 2400 / max(page.rect.width, page.rect.height))
+                    scale = 2400 / max(page.rect.width, page.rect.height)
+                    # The bundled engine keeps its original cap; PP-OCRv5 drops whole lines at 2x on A4 scans.
+                    if current().ocr == 'legacy':
+                        scale = min(2, scale)
                     pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
                     recognized, low = recognize(pix.tobytes('png'))
                     ocr_pages += 1

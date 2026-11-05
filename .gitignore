@@ -17,3 +17,6 @@ playwright-report/
 
 .venv-jiuwen/
 logs/
+
+# OCR models fetched by scripts/fetch_ocr_models.py (about 86 MB)
+backend/models/

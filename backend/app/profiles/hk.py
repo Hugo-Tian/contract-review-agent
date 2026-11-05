@@ -328,9 +328,10 @@ PROFILE = Profile(
               'deposit_validation': '请检查按金试算：金额须为非负数且最多两位小数；每个扣减项要有名称、金额和依据；选择罚则时要填写合约依据，按月租计算还需月租和月数；最后勾选确认。',
               'upfront_validation': '请检查签约前支出：金额须为非负数且最多两位小数，比例为0至100；要填写数字的来源（租约条款或报价单），并勾选确认。',
               # Measured on the fictional scans in examples/hk (scripts/evaluate_hk_ocr.py).
-              'ocr_warning': '本机OCR对繁体中文识别较弱：繁体字可能被识别成简体字，部分字会被漏掉（例如“港幣”变成“港”、“不予退還”变成“不予退”、“為”丢失）；英文里的“HK$”可能被识别成“HKs”。金额、货币、否定词和期限请逐字对照原件修改后再分析。',
+              'ocr_warning': '本机OCR使用 PP-OCRv5 模型识别繁体中文和英文，识别结果仍可能有错或漏字，尤其是金额、货币符号（如“HK$”）、否定词（如“不予退還”）和表格。分析前请逐字对照原件核对并修改。',
               'not_ready': '香港版的这一功能尚未完成，暂不能调用模型；请先使用演示模式。'},
     ui=UI,
     tools=TOOLS,
     summary_max=360,
+    ocr='ppocr-v5-server', ocr_max_pages=8,
 )

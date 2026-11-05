@@ -4,6 +4,9 @@ if (!(Test-Path '.venv-jiuwen\Scripts\python.exe')) { py -3.11 -m venv .venv-jiu
 & .\.venv-jiuwen\Scripts\python.exe -m pip install -r backend\requirements-lock.txt
 if ($LASTEXITCODE) { throw 'Python dependencies failed' }
 if (!(Test-Path 'backend\.env')) { Copy-Item backend\.env.example backend\.env }
+# Hong Kong edition OCR models (about 86 MB, SHA-256 checked against rapidocr's manifest)
+& .\.venv-jiuwen\Scripts\python.exe scripts\fetch_ocr_models.py
+if ($LASTEXITCODE) { throw 'OCR model download failed; rerun setup.ps1 or scripts\fetch_ocr_models.py' }
 & .\.venv-jiuwen\Scripts\python.exe scripts\create_examples.py
 if ($LASTEXITCODE) { throw 'Example generation failed' }
 Push-Location frontend

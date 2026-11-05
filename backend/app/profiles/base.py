@@ -37,6 +37,10 @@ class Profile:
     tools: dict = field(default_factory=dict)
     # Report summary length; English needs more characters than Chinese for the same content.
     summary_max: int = 150
+    # OCR engine: 'legacy' (bundled rapidocr_onnxruntime) or 'ppocr-v5-server' (see app/ocr.py).
+    ocr: str = 'legacy'
+    # Pages OCR'd per upload; the parser has 180 s in total, and the HK model is slower.
+    ocr_max_pages: int = 20
 
     @property
     def ready(self):
@@ -48,4 +52,4 @@ class Profile:
         return {'region': self.region, 'name': self.name, 'currency': self.currency, 'fact_labels': list(self.fact_labels),
                 'context': {'roles': list(self.context.roles), 'goals': list(self.context.goals), 'languages': list(self.context.languages),
                             'channels': list(self.context.channels), 'recipients': list(self.context.recipients)},
-                'ready': self.ready, 'ui': self.ui}
+                'ready': self.ready, 'ocr_max_pages': self.ocr_max_pages, 'ui': self.ui}
