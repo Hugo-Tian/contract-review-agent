@@ -5,7 +5,7 @@ import re
 from decimal import Decimal, ROUND_HALF_UP
 from difflib import SequenceMatcher
 import httpx
-from .analysis import masked_document, evidence_catalog, redact, ModelFailure, count_usage, mostly_chinese
+from .analysis import masked_document, evidence_catalog, redact, ModelFailure, count_usage, mostly_chinese, canonical
 from .tool_schemas import PromiseResult
 from .profiles import current
 
@@ -40,7 +40,12 @@ async def compare_promises(doc, request):
                 if choice.get('finish_reason') != 'stop':
                     raise ValueError('输出不完整')
                 content = choice['message']['content']
-                result = PromiseResult.model_validate_json(content)
+                parsed = json.loads(content)
+                if request.output_language and isinstance(parsed, dict):
+                    for item in parsed.get('items') or []:
+                        if isinstance(item, dict):
+                            item['status'] = canonical(item.get('status'), {'合同有写', '说法不一致', '合同没找到', '需要确认'})
+                result = PromiseResult.model_validate(parsed)
                 if sorted(i.promise_id for i in result.items) != list(range(1, len(promises) + 1)):
                     raise ValueError('承诺条目遗漏或重复')
                 rows = []

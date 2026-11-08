@@ -29,6 +29,36 @@ def count_usage(response):
                 meter[key] = meter.get(key, 0) + value
 
 
+# Traditional forms of characters that occur in the schema's fixed values (levels, statuses, fact labels,
+# "未发现明确约定", promise statuses). Used only to map a whole fixed value back to its canonical form.
+FIXED_T2S = str.maketrans('確約條衝寫說沒認體業與範圍還終費擔維責轉單發現', '确约条冲写说没认体业与范围还终费担维责转单发现')
+MISSING = '未发现明确约定'
+
+
+def canonical(value, allowed):
+    """`value` if allowed; else its Simplified form when that is one of `allowed`; otherwise unchanged."""
+    if not isinstance(value, str) or value in allowed:
+        return value
+    candidate = value.strip().replace('資訊', '信息').translate(FIXED_T2S)
+    return candidate if candidate in allowed else value
+
+
+def normalize_fixed_values(data, fact_labels):
+    """When the report is written in Traditional Chinese, the model sometimes writes the fixed values that
+    way too ("明確約定", "物業與範圍"). Map exact matches back; free text is never touched."""
+    if not isinstance(data, dict):
+        return data
+    for fact in data.get('facts') or []:
+        if isinstance(fact, dict):
+            fact['label'] = canonical(fact.get('label'), fact_labels)
+            fact['value'] = canonical(fact.get('value'), {MISSING})
+    for issue in data.get('issues') or []:
+        if isinstance(issue, dict):
+            issue['level'] = canonical(issue.get('level'), {'高', '中', '低'})
+            issue['status'] = canonical(issue.get('status'), {'明确约定', '表述含糊', '条款冲突', '信息缺失'})
+    return data
+
+
 def configured():
     return bool(os.getenv('MODEL_API_KEY') and os.getenv('MODEL_NAME'))
 
@@ -264,7 +294,10 @@ async def analyze(doc: Document, context: Context):
                 if choice.get('finish_reason') != 'stop':
                     raise ValueError('模型输出未完整结束。')
                 content = choice['message']['content']
-                report = resolve_references(region_model.model_validate_json(content), catalog, region_report)
+                parsed = json.loads(content)
+                if profile.context.languages:
+                    parsed = normalize_fixed_values(parsed, profile.fact_labels)
+                report = resolve_references(region_model.model_validate(parsed), catalog, region_report)
                 normalize_missing_references(report, masked)
                 validate_evidence(report, masked)
                 check_output_language(report, context)

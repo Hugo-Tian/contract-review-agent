@@ -229,3 +229,10 @@ def test_checklist_ignores_clauses_that_forbid_subletting(client):
     report_id = live_snapshot(doc, {})
     items = [i['title'] for i in client.post('/api/tools/checklist', json={'document_id': doc.id, 'version': 1, 'report_id': report_id}).json()['items']]
     assert '要求出示业主同意分租的书面文件' not in items
+
+
+def test_hk_promise_traditional_status_is_accepted(monkeypatch):
+    doc = document(LEASE)
+    mock_promise_model(monkeypatch, {'items': [{'promise_id': 1, 'status': '合同沒找到', 'explanation': '租約裏沒有找到這個說法。', 'question': '可以寫進租約嗎？', 'evidence': []}]})
+    result = asyncio.run(contract_tools.compare_promises(doc, PromiseRequest(document_id=doc.id, version=1, promises='包修', consent=True, output_language='繁體中文')))
+    assert result['items'][0]['status'] == '合同没找到' and result['items'][0]['explanation'] == '租約裏沒有找到這個說法。'

@@ -27,7 +27,7 @@ questions 为3至5个最重要的确认问题；amendments 全部是待双方协
 本报告仅解读租约。业主/代理承诺对照、按金与退租试算和法规检索由独立工具处理，不在本报告中猜测或编造。
 
 【输出语言】
-summary、facts.value、title、reason、explanation、impact、question、negotiation、questions、amendments、message 全部用 context.output_language 书写（简体中文、繁體中文或 English）。固定取值（level、status、facts.label 以及“未发现明确约定”）保持 schema 规定的中文原样。引用原文由后端回填，不翻译。
+summary、facts.value、title、reason、explanation、impact、question、negotiation、questions、amendments、message 全部用 context.output_language 书写（简体中文、繁體中文或 English）。固定取值不翻译、不转繁体，逐字使用简体：level 只能是 高/中/低；status 只能是 明确约定/表述含糊/条款冲突/信息缺失；facts.label 逐字使用 required_facts；缺失值写“未发现明确约定”。引用原文由后端回填，不翻译。
 
 【面向普通租客的写法，适用于所有解释、标题和沟通建议】
 读者不熟悉香港租房惯例，也没有法律知识。用日常语言、短句、具体动作，像耐心向朋友解释，不用法律论文或公文语气，不评价读者。

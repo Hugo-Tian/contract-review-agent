@@ -281,3 +281,32 @@ def test_pseudonyms_survive_a_restart(tmp_path, monkeypatch):
     monkeypatch.setenv('PSEUDONYM_KEY_FILE', str(tmp_path / 'other.key'))
     monkeypatch.setattr(hk, '_KEY', None)
     assert hk.redact('Payee: Mr. Lee Ka Fai') != first   # a different installation cannot link them
+
+
+def test_traditional_report_with_traditional_fixed_values_is_accepted(monkeypatch):
+    # Seen in use: with 繁體中文 output the model also wrote statuses and labels in Traditional characters.
+    trad = {'出租人及身份': '出租人及身份', '承租人': '承租人', '收款主体': '收款主體', '物业与范围': '物業與範圍', '租金与付款': '租金與付款',
+            '按金与退还': '按金與退還', '租期与提前终止': '租期與提前終止', '费用分担': '費用分擔', '维修责任': '維修責任', '分租转租与交还单位': '分租轉租與交還單位'}
+    doc = document(ENGLISH)
+    blocks, _ = analysis.evidence_catalog(analysis.masked_document(doc))
+    facts = [{'label': trad[label], 'value': '未發現明確約定', 'evidence': []} for label in hk.FACT_LABELS]
+    facts[8] = {'label': '維修責任', 'value': '租客負責所有維修', 'evidence': [find(blocks, 0, 'all repairs')]}
+    issues = [{'title': '維修全由你負責', 'level': '高', 'reason': 'r', 'explanation': '這條說所有維修都由租客負責。', 'impact': 'i', 'status': '明確約定',
+               'question': '小修和大修怎樣分？', 'negotiation': 'n', 'evidence': [find(blocks, 0, 'all repairs')]},
+              {'title': '按金退還期限未寫', 'level': '中', 'reason': 'r', 'explanation': 'e', 'impact': 'i', 'status': '資訊缺失',
+               'question': 'q', 'negotiation': 'n', 'evidence': []}]
+    mock_model(monkeypatch, [model_report(summary='請先核對維修責任。', facts=facts, issues=issues, message='你好，想確認幾件事。')])
+    report = asyncio.run(analysis.analyze(doc, Context(output_language='繁體中文')))
+    assert [f.label for f in report.facts] == list(hk.FACT_LABELS)
+    assert report.facts[0].value == '未发现明确约定' and report.facts[8].value == '租客負責所有維修'   # free text untouched
+    assert [i.status for i in report.issues] == ['明确约定', '信息缺失']
+    assert report.issues[0].explanation == '這條說所有維修都由租客負責。'
+
+
+def test_cn_does_not_normalize_fixed_values(monkeypatch):
+    monkeypatch.setenv('REGION', 'cn')
+    from app.profiles import cn
+    facts = [{'label': label, 'value': '未發現明確約定', 'evidence': []} for label in cn.FACT_LABELS]
+    mock_model(monkeypatch, [model_report(facts=facts)])
+    with pytest.raises(analysis.ModelFailure):
+        asyncio.run(analysis.analyze(document('服务费9800元。'), Context()))
